@@ -101,7 +101,7 @@ def _get_local_ip():
 def dist_init():
     global rank, world_size, inited
     try:
-        rank, world_size = _dist_init()
+        rank, world_size = 0,1
     except RuntimeError as e:
         if 'public' in e.args[0]:
             logger.info(e)

@@ -108,3 +108,5 @@ experiments
 training_dataset/*
 demo/*
 tools/logs/*
+tools/results/*
+toolkit/utils/region.c
