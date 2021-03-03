@@ -105,3 +105,6 @@ venv.bak/
 
 testing_dataset/*
 experiments
+training_dataset/*
+demo/*
+tools/logs/*
