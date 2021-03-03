@@ -19,6 +19,8 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib.ticker import LinearLocator
 
+from pysot import rubost_track
+
 torch.set_num_threads(1)
 
 parser = argparse.ArgumentParser(description='tracking demo')
@@ -100,6 +102,7 @@ def visualize(outputs,fig,frame_num):
     ax3.set_xlim(0.0, 25.0)
     ax3.set_ylim(25.0, 0.0)
 
+    rubost_track.plot(score)
     ##
     plt.pause(0.1)
 
