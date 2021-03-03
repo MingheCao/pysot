@@ -15,6 +15,10 @@ from pysot.core.config import cfg
 from pysot.models.model_builder import ModelBuilder
 from pysot.tracker.tracker_builder import build_tracker
 
+import matplotlib.pyplot as plt
+from matplotlib import cm
+from matplotlib.ticker import LinearLocator
+
 torch.set_num_threads(1)
 
 parser = argparse.ArgumentParser(description='tracking demo')
@@ -52,7 +56,52 @@ def get_frames(video_name):
                         key=lambda x: int(x.split('/')[-1].split('.')[0]))
         for img in images:
             frame = cv2.imread(img)
-            yield frame
+            yield frame,img
+
+def visualize(outputs,fig,frame_num):
+    score = outputs['score']
+    respond = score.reshape(5, 25, 25).max(0)
+    X = np.arange(0, 25, 1)
+    Y = np.arange(0, 25, 1)
+    X, Y = np.meshgrid(X, Y)
+
+    ax1 = fig.add_subplot(222, projection='3d')
+    ax1.cla()
+    surf = ax1.plot_surface(X, Y, respond, cmap=cm.coolwarm, linewidth=0, antialiased=False)
+    ax1.set_zlim(0.0, 1.0)
+    ax1.zaxis.set_major_locator(LinearLocator(10))
+    ax1.zaxis.set_major_formatter('{x:.01f}')
+    # fig.colorbar(surf, shrink=0.5, aspect=5)
+    ##
+    maxval = respond.max()
+    minval = respond.min()
+    responsemap = (respond - minval) / (maxval - minval) * 255
+    heatmap = cv2.resize(responsemap.astype(np.uint8), (255, 255), interpolation=cv2.INTER_LINEAR)
+    heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+    cv2.normalize(heatmap, None, 0, 255, cv2.NORM_MINMAX,
+                  cv2.CV_8U)
+
+    frame_show = cv2.addWeighted(outputs['x_crop'], 0.7, heatmap, 0.3, 0)
+    strshow = 'bestscore:' + str(outputs['best_score'])
+    frame_show = cv2.putText(frame_show, strshow, (15, 35), cv2.FONT_HERSHEY_SIMPLEX,
+                             0.5, (0, 0, 255), 1, cv2.LINE_AA)
+    frame_show = cv2.putText(frame_show, 'frame'+frame_num, (15, 20), cv2.FONT_HERSHEY_SIMPLEX,
+                             0.5, (0, 0, 255), 1, cv2.LINE_AA)
+    ax2 = fig.add_subplot(221)
+    ax2.cla()
+    ax2.imshow(frame_show[:,:,::-1])
+    plt.xticks([]), plt.yticks([])
+
+    ##
+    ax3 = fig.add_subplot(223)
+    ax3.cla()
+    idx=np.where(respond>=0.2)
+    ax3.scatter(idx[1], idx[0])
+    ax3.set_xlim(0.0, 25.0)
+    ax3.set_ylim(25.0, 0.0)
+
+    ##
+    plt.pause(0.1)
 
 
 def main():
@@ -78,7 +127,16 @@ def main():
     else:
         video_name = 'webcam'
     cv2.namedWindow(video_name, cv2.WND_PROP_FULLSCREEN)
-    for frame in get_frames(args.video_name):
+
+    fig = plt.figure()
+
+    start_frame=100
+
+    for frame,img in get_frames(args.video_name):
+        frame_num=img.split('/')[-1].split('.')[0]
+        if int(frame_num) < start_frame:
+            continue
+
         if first_frame:
             try:
                 init_rect = cv2.selectROI(video_name, frame, False, False)
@@ -88,21 +146,16 @@ def main():
             first_frame = False
         else:
             outputs = tracker.track(frame)
-            if 'polygon' in outputs:
-                polygon = np.array(outputs['polygon']).astype(np.int32)
-                cv2.polylines(frame, [polygon.reshape((-1, 1, 2))],
-                              True, (0, 255, 0), 3)
-                mask = ((outputs['mask'] > cfg.TRACK.MASK_THERSHOLD) * 255)
-                mask = mask.astype(np.uint8)
-                mask = np.stack([mask, mask*255, mask]).transpose(1, 2, 0)
-                frame = cv2.addWeighted(frame, 0.77, mask, 0.23, -1)
-            else:
-                bbox = list(map(int, outputs['bbox']))
-                cv2.rectangle(frame, (bbox[0], bbox[1]),
+
+            visualize(outputs,fig,frame_num)
+
+
+            bbox = list(map(int, outputs['bbox']))
+            cv2.rectangle(frame, (bbox[0], bbox[1]),
                               (bbox[0]+bbox[2], bbox[1]+bbox[3]),
                               (0, 255, 0), 3)
             cv2.imshow(video_name, frame)
-            cv2.waitKey(40)
+            cv2.waitKey(0)
 
 
 if __name__ == '__main__':

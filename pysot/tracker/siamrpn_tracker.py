@@ -109,6 +109,7 @@ class SiamRPNTracker(SiameseTracker):
         outputs = self.model.track(x_crop)
 
         score = self._convert_score(outputs['cls'])
+
         pred_bbox = self._convert_bbox(outputs['loc'], self.anchors)
 
         def change(r):
@@ -158,5 +159,8 @@ class SiamRPNTracker(SiameseTracker):
         best_score = score[best_idx]
         return {
                 'bbox': bbox,
-                'best_score': best_score
-               }
+                'best_score': best_score,
+                'score': score,
+                'pscore': pscore,
+                'x_crop': x_crop.permute(2,3,1,0).squeeze().cpu().detach().numpy().astype(np.uint8)
+        }
