@@ -61,10 +61,12 @@ def get_frames(video_name):
             yield frame,img
 
 def visualize(outputs,fig,frame_num):
+    instance_size=outputs['instance_size']
+    score_size=outputs['score_size']
     score = outputs['score']
-    respond = score.reshape(5, 25, 25).max(0)
-    X = np.arange(0, 25, 1)
-    Y = np.arange(0, 25, 1)
+    respond = score.reshape(5, score_size, score_size).max(0)
+    X = np.arange(0, score_size, 1)
+    Y = np.arange(0, score_size, 1)
     X, Y = np.meshgrid(X, Y)
 
     ax1 = fig.add_subplot(222, projection='3d')
@@ -78,7 +80,7 @@ def visualize(outputs,fig,frame_num):
     maxval = respond.max()
     minval = respond.min()
     responsemap = (respond - minval) / (maxval - minval) * 255
-    heatmap = cv2.resize(responsemap.astype(np.uint8), (255, 255), interpolation=cv2.INTER_LINEAR)
+    heatmap = cv2.resize(responsemap.astype(np.uint8), (instance_size, instance_size), interpolation=cv2.INTER_LINEAR)
     heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
     cv2.normalize(heatmap, None, 0, 255, cv2.NORM_MINMAX,
                   cv2.CV_8U)
@@ -133,7 +135,7 @@ def main():
 
     fig = plt.figure()
 
-    start_frame=100
+    start_frame=10
 
     for frame,img in get_frames(args.video_name):
         frame_num=img.split('/')[-1].split('.')[0]
@@ -152,13 +154,12 @@ def main():
 
             visualize(outputs,fig,frame_num)
 
-
             bbox = list(map(int, outputs['bbox']))
             cv2.rectangle(frame, (bbox[0], bbox[1]),
                               (bbox[0]+bbox[2], bbox[1]+bbox[3]),
                               (0, 255, 0), 3)
             cv2.imshow(video_name, frame)
-            cv2.waitKey(0)
+            cv2.waitKey(1)
 
 
 if __name__ == '__main__':

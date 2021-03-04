@@ -48,6 +48,14 @@ class ModelBuilder(nn.Module):
             zf = self.neck(zf)
         self.zf = zf
 
+    def template_rb(self, z):
+        zf = self.backbone(z)
+        if cfg.MASK.MASK:
+            zf = zf[-1]
+        if cfg.ADJUST.ADJUST:
+            zf = self.neck(zf)
+        return zf
+
     def track(self, x):
         xf = self.backbone(x)
         if cfg.MASK.MASK:
@@ -59,17 +67,17 @@ class ModelBuilder(nn.Module):
         if cfg.MASK.MASK:
             mask, self.mask_corr_feature = self.mask_head(self.zf, xf)
         return {
-                'cls': cls,
-                'loc': loc,
-                'mask': mask if cfg.MASK.MASK else None
-               }
+            'cls': cls,
+            'loc': loc,
+            'mask': mask if cfg.MASK.MASK else None
+        }
 
     def mask_refine(self, pos):
         return self.refine_head(self.xf, self.mask_corr_feature, pos)
 
     def log_softmax(self, cls):
         b, a2, h, w = cls.size()
-        cls = cls.view(b, 2, a2//2, h, w)
+        cls = cls.view(b, 2, a2 // 2, h, w)
         cls = cls.permute(0, 2, 3, 4, 1).contiguous()
         cls = F.log_softmax(cls, dim=4)
         return cls
@@ -102,7 +110,7 @@ class ModelBuilder(nn.Module):
 
         outputs = {}
         outputs['total_loss'] = cfg.TRAIN.CLS_WEIGHT * cls_loss + \
-            cfg.TRAIN.LOC_WEIGHT * loc_loss
+                                cfg.TRAIN.LOC_WEIGHT * loc_loss
         outputs['cls_loss'] = cls_loss
         outputs['loc_loss'] = loc_loss
 

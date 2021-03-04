@@ -12,7 +12,9 @@ def scoremap_sample(score):
     thre=0.2
     sig=0.15
 
-    respond = score.reshape(5, 25, 25).max(0)
+    score_size=int(np.sqrt(score.size/5))
+
+    respond = score.reshape(5, score_size, score_size).max(0)
     idx = np.where(respond >= thre)
     points=np.array(idx).transpose()
 
@@ -28,6 +30,37 @@ def scoremap_sample(score):
 def gmm_fit(X):
     gm = GaussianMixture(n_components=4, covariance_type='full',random_state=0).fit(X)
     return gm
+
+def KLdiv_gmm(gmm_p,gmm_q):
+    res=0.
+    for i in range(gmm_p.n_components):
+        mu_p=gmm_p.means_[i]
+        cov_p=gmm_p.covariances_[i]
+        w_p=gmm_p.weights_[i]
+        min_div = float("inf")
+
+        for j in range(gmm_q.n_components):
+            mu_q = gmm_q.means_[i]
+            cov_q = gmm_q.covariances_[i]
+            w_q = gmm_q.weights_[i]
+
+            div=KLdiv_gm((mu_p,cov_p),(mu_q,cov_q))
+
+            if div+np.log(w_p/w_q) <min_div:
+                min_div=div+np.log(w_p/w_q)
+
+        res+=w_p*min_div
+
+    return res
+
+# p = (mu1, Sigma1) = np.transpose(np.array([0.2, 0.1, 0.5, 0.4])), np.diag([0.14, 0.52, 0.2, 0.4])
+# q = (mu2, Sigma2) = np.transpose(np.array([0.3, 0.6, -0.5, -0.8])), np.diag([0.24, 0.02, 0.31, 0.51])
+def KLdiv_gm(p, q):
+    a = np.log(np.linalg.det(q[1])/np.linalg.det(p[1]))
+    b = np.trace(np.dot(np.linalg.inv(q[1]), p[1]))
+    c = np.dot(np.dot(np.transpose(q[0] - p[0]), np.linalg.inv(q[1])), (q[0] - p[0]))
+    n = p[1].shape[0]
+    return 0.5 * (a - n + b + c)
 
 color_iter = itertools.cycle(['navy', 'c', 'cornflowerblue', 'gold',
                               'darkorange'])
