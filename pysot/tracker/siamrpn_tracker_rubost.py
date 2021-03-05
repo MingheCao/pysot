@@ -13,7 +13,6 @@ from pysot.tracker.siamrpn_tracker import SiamRPNTracker
 import torch
 from pysot import rubost_track
 
-
 class SiamRPNRBTracker(SiamRPNTracker):
     def __init__(self, model):
         super(SiamRPNRBTracker, self).__init__(model)
@@ -25,27 +24,15 @@ class SiamRPNRBTracker(SiamRPNTracker):
             img(np.ndarray): BGR image
             bbox: (x, y, w, h) bbox
         """
-        self.center_pos = np.array([bbox[0] + (bbox[2] - 1) / 2,
-                                    bbox[1] + (bbox[3] - 1) / 2])
-        self.size = np.array([bbox[2], bbox[3]])
+        z_crop=self.get_z_crop(img, bbox)
 
-        # calculate z crop size
-        w_z = self.size[0] + cfg.TRACK.CONTEXT_AMOUNT * np.sum(self.size)
-        h_z = self.size[1] + cfg.TRACK.CONTEXT_AMOUNT * np.sum(self.size)
-        s_z = round(np.sqrt(w_z * h_z))
-
-        # calculate channle average
-        self.channel_average = np.mean(img, axis=(0, 1))
-
-        # get crop
-        z_crop = self.get_subwindow(img, self.center_pos,
-                                    cfg.TRACK.EXEMPLAR_SIZE,
-                                    s_z, self.channel_average)
         self.model.template(z_crop)
         self.zf_gt = self.model.zf
         self.zf_global = self.model.zf
 
-    def template(self,img,bbox):
+
+
+    def get_z_crop(self,img, bbox):
         self.center_pos = np.array([bbox[0] + (bbox[2] - 1) / 2,
                                     bbox[1] + (bbox[3] - 1) / 2])
         self.size = np.array([bbox[2], bbox[3]])
@@ -62,23 +49,43 @@ class SiamRPNRBTracker(SiamRPNTracker):
         z_crop = self.get_subwindow(img, self.center_pos,
                                     cfg.TRACK.EXEMPLAR_SIZE,
                                     s_z, self.channel_average)
+        return z_crop
+
+    def template(self,img,bbox):
+        z_crop = self.get_z_crop(img, bbox)
 
         return self.model.template_rb(z_crop)
 
     @torch.no_grad()
     def template_upate(self, zf):
         for idx in range(len(zf)):
-            self.zf_global[idx]+=zf[idx]
-            self.zf_global[idx] /= 2
-            pass
+            self.zf_global[idx]=0.9*self.zf_global[idx]+0.1*zf[idx]
 
         self.model.zf = self.zf_global
+
+    def init_gm(self,z_crop):
+
+        w_z = self.size[0] + cfg.TRACK.CONTEXT_AMOUNT * np.sum(self.size)
+        h_z = self.size[1] + cfg.TRACK.CONTEXT_AMOUNT * np.sum(self.size)
+        s_z = np.sqrt(w_z * h_z)
+        s_x = s_z * (instance_size / cfg.TRACK.EXEMPLAR_SIZE)
+
+        # expend z_crop to x_crop size
+        # x_crop = self.get_subwindow(img, (0,0), instance_size,
+        #                             round(s_x), self.channel_average)
+
+        X = scoremap_sample_reject(score, 2000)
+        X[:, [1, 0]] = X[:, [0, 1]]
+        self.gmm_gt=rubost_track.gmm_fit(X)
+        pass
 
     def check_if_update(self,score,best_score):
 
         X, _ = rubost_track.scoremap_sample(score)
         X[:, [1, 0]] = X[:, [0, 1]]
         gmm = rubost_track.gmm_fit(X)
+
+        # kldiv=rubost_track.KLdiv_gmm(gmm,self.gmm_gt)
 
 
         if best_score < cfg.TRACK.CONFIDENCE_LOW:
@@ -94,15 +101,16 @@ class SiamRPNRBTracker(SiamRPNTracker):
         return:
             bbox(list):[x, y, width, height]
         """
-        w_z = self.size[0] + cfg.TRACK.CONTEXT_AMOUNT * np.sum(self.size)
-        h_z = self.size[1] + cfg.TRACK.CONTEXT_AMOUNT * np.sum(self.size)
-        s_z = np.sqrt(w_z * h_z)
-        scale_z = cfg.TRACK.EXEMPLAR_SIZE / s_z
 
         if self.longterm_state:
             instance_size = cfg.TRACK.LOST_INSTANCE_SIZE
         else:
             instance_size = cfg.TRACK.INSTANCE_SIZE
+
+        w_z = self.size[0] + cfg.TRACK.CONTEXT_AMOUNT * np.sum(self.size)
+        h_z = self.size[1] + cfg.TRACK.CONTEXT_AMOUNT * np.sum(self.size)
+        s_z = np.sqrt(w_z * h_z)
+        scale_z = cfg.TRACK.EXEMPLAR_SIZE / s_z
 
         score_size = (instance_size - cfg.TRACK.EXEMPLAR_SIZE) // \
                      cfg.ANCHOR.STRIDE + 1 + cfg.TRACK.BASE_SIZE
@@ -112,9 +120,9 @@ class SiamRPNRBTracker(SiamRPNTracker):
         anchors = self.generate_anchor(score_size)
 
         s_x = s_z * (instance_size / cfg.TRACK.EXEMPLAR_SIZE)
-
         x_crop = self.get_subwindow(img, self.center_pos, instance_size,
                                     round(s_x), self.channel_average)
+
         outputs = self.model.track(x_crop)
         score = self._convert_score(outputs['cls'])
         pred_bbox = self._convert_bbox(outputs['loc'], anchors)
