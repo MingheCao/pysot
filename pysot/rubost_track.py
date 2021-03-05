@@ -27,6 +27,21 @@ def scoremap_sample(score):
 
     return point_set,points
 
+def scoremap_sample_reject(score,n_samples):
+
+    score_size=int(np.sqrt(score.size/5))
+
+    respond = score.reshape(5, score_size, score_size).max(0)
+
+    xy=np.random.randint(0,score_size,(n_samples,2))
+    z=respond[(xy[:,0],xy[:,1])]
+
+    s = np.random.uniform(size=n_samples)
+    idx=np.where(z>s)
+
+    return xy[idx]
+
+
 def gmm_fit(X):
     gm = GaussianMixture(n_components=4, covariance_type='full',random_state=0).fit(X)
     return gm
@@ -95,7 +110,7 @@ def plot_results(X, Y_, means, covariances, title):
     plt.title(title)
 
 def plot(score):
-    X, _ = scoremap_sample(score)
+    X = scoremap_sample_reject(score,2000)
     X[:, [1, 0]] = X[:, [0, 1]]
     gm=gmm_fit(X)
     plot_results(X, gm.predict(X), gm.means_, gm.covariances_, 'Gaussian Mixture')
