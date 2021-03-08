@@ -278,7 +278,7 @@ __C.TRACK.CONTEXT_AMOUNT = 0.5
 __C.TRACK.LOST_INSTANCE_SIZE = 831
 
 # Long term confidence low
-__C.TRACK.CONFIDENCE_LOW = 0.85
+__C.TRACK.CONFIDENCE_LOW = 0.99
 
 # Long term confidence high
 __C.TRACK.CONFIDENCE_HIGH = 0.998

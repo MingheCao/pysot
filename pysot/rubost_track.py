@@ -7,43 +7,45 @@ from scipy import linalg
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
-def scoremap_sample(score):
-
-    thre=0.2
-    sig=0.15
-
-    score_size=int(np.sqrt(score.size/5))
-
-    respond = score.reshape(5, score_size, score_size).max(0)
-    idx = np.where(respond >= thre)
-    points=np.array(idx).transpose()
-
-    zval=10*respond[idx]
-    zval=zval.round().astype(np.int)
-    point_set=points.repeat(zval,axis=0)
-
-    gauss_rand=np.random.normal([0,0], sig, size=(len(point_set),2))
-    point_set=point_set+gauss_rand
-
-    return point_set,points
+# def scoremap_sample(score):
+#
+#     thre=0.2
+#     sig=0.15
+#
+#     score_size=int(np.sqrt(score.size/5))
+#
+#     respond = score.reshape(5, score_size, score_size).max(0)
+#     idx = np.where(respond >= thre)
+#     points=np.array(idx).transpose()
+#
+#     zval=10*respond[idx]
+#     zval=zval.round().astype(np.int)
+#     point_set=points.repeat(zval,axis=0)
+#
+#     gauss_rand=np.random.normal([0,0], sig, size=(len(point_set),2))
+#     point_set=point_set+gauss_rand
+#
+#     return point_set,points
 
 def scoremap_sample_reject(score,n_samples):
 
     score_size=int(np.sqrt(score.size/5))
-
     respond = score.reshape(5, score_size, score_size).max(0)
 
-    xy=np.random.randint(0,score_size,(n_samples,2))
-    z=respond[(xy[:,0],xy[:,1])]
+    xy=np.random.rand(n_samples,2)*(score_size - 1)
+    xy_cord=np.round(xy).astype(np.int32)
+    z=respond[(xy_cord[:,0],xy_cord[:,1])]
 
     s = np.random.uniform(size=n_samples)
     idx=np.where(z>s)
 
-    return xy[idx]
+    sample_points=xy[idx]
+
+    return sample_points
 
 
-def gmm_fit(X):
-    gm = GaussianMixture(n_components=4, covariance_type='full',random_state=0).fit(X)
+def gmm_fit(X,n_components):
+    gm = GaussianMixture(n_components=n_components, covariance_type='full',random_state=0).fit(X)
     return gm
 
 def KLdiv_gmm(gmm_p,gmm_q):
@@ -55,9 +57,9 @@ def KLdiv_gmm(gmm_p,gmm_q):
         min_div = float("inf")
 
         for j in range(gmm_q.n_components):
-            mu_q = gmm_q.means_[i]
-            cov_q = gmm_q.covariances_[i]
-            w_q = gmm_q.weights_[i]
+            mu_q = gmm_q.means_[j]
+            cov_q = gmm_q.covariances_[j]
+            w_q = gmm_q.weights_[j]
 
             div=KLdiv_gm((mu_p,cov_p),(mu_q,cov_q))
 
@@ -81,7 +83,7 @@ color_iter = itertools.cycle(['navy', 'c', 'cornflowerblue', 'gold',
                               'darkorange'])
 
 def plot_results(X, Y_, means, covariances, title):
-    splot = plt.subplot(2, 2, 4)
+    splot = plt.subplot(1, 2, 2)
     splot.cla()
     for i, (mean, covar, color) in enumerate(zip(
             means, covariances, color_iter)):
@@ -108,12 +110,6 @@ def plot_results(X, Y_, means, covariances, title):
     plt.xticks(())
     plt.yticks(())
     plt.title(title)
-
-def plot(score):
-    X = scoremap_sample_reject(score,2000)
-    X[:, [1, 0]] = X[:, [0, 1]]
-    gm=gmm_fit(X)
-    plot_results(X, gm.predict(X), gm.means_, gm.covariances_, 'Gaussian Mixture')
 
 if __name__ == '__main__':
     score=np.load('/home/rislab/Workspace/pysot/tools/aa.npy')

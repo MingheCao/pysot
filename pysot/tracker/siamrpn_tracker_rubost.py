@@ -13,6 +13,8 @@ from pysot.tracker.siamrpn_tracker import SiamRPNTracker
 import torch
 from pysot import rubost_track
 
+import cv2
+
 class SiamRPNRBTracker(SiamRPNTracker):
     def __init__(self, model):
         super(SiamRPNRBTracker, self).__init__(model)
@@ -30,7 +32,91 @@ class SiamRPNRBTracker(SiamRPNTracker):
         self.zf_gt = self.model.zf
         self.zf_global = self.model.zf
 
+    def init_gm(self,img):
 
+        instance_size = cfg.TRACK.INSTANCE_SIZE
+        w_z = self.size[0] + cfg.TRACK.CONTEXT_AMOUNT * np.sum(self.size)
+        h_z = self.size[1] + cfg.TRACK.CONTEXT_AMOUNT * np.sum(self.size)
+        s_z = np.sqrt(w_z * h_z)
+        s_x = s_z * (instance_size / cfg.TRACK.EXEMPLAR_SIZE)
+
+        # expend z_crop to x_crop size
+        x_crop = self.get_subwindow_init(img, self.center_pos, instance_size,
+                                    round(s_x), round(s_z), self.channel_average)
+        outputs = self.model.track(x_crop)
+        score = self._convert_score(outputs['cls'])
+
+        # cv2.imshow('.',x_crop.permute(2, 3, 1, 0).squeeze().cpu().detach().numpy().astype(np.uint8))
+        # cv2.waitKey(0)
+        X = rubost_track.scoremap_sample_reject(score, 5000)
+        X[:, [1, 0]] = X[:, [0, 1]]
+        self.gmm_gt=rubost_track.gmm_fit(X,1)
+
+        return {'instance_size':cfg.TRACK.INSTANCE_SIZE,
+                'score_size':25,
+                'score':score,
+                'x_crop':x_crop.permute(2, 3, 1, 0).squeeze().cpu().detach().numpy().astype(np.uint8),
+                'best_score':0
+                }
+
+
+    def get_subwindow_init(self, im, pos, model_sz, original_sz, s_z,avg_chans):
+
+        if isinstance(pos, float):
+            pos = [pos, pos]
+        sz = original_sz
+        im_sz = im.shape
+        c = (original_sz + 1) / 2
+        # context_xmin = round(pos[0] - c) # py2 and py3 round
+        context_xmin = np.floor(pos[0] - c + 0.5)
+        context_xmax = context_xmin + sz - 1
+        # context_ymin = round(pos[1] - c)
+        context_ymin = np.floor(pos[1] - c + 0.5)
+        context_ymax = context_ymin + sz - 1
+        left_pad = int(max(0., -context_xmin))
+        top_pad = int(max(0., -context_ymin))
+        right_pad = int(max(0., context_xmax - im_sz[1] + 1))
+        bottom_pad = int(max(0., context_ymax - im_sz[0] + 1))
+
+        context_xmin = context_xmin + left_pad
+        context_xmax = context_xmax + left_pad
+        context_ymin = context_ymin + top_pad
+        context_ymax = context_ymax + top_pad
+
+        r, c, k = im.shape
+        if any([top_pad, bottom_pad, left_pad, right_pad]):
+            size = (r + top_pad + bottom_pad, c + left_pad + right_pad, k)
+            te_im = np.zeros(size, np.uint8)
+            te_im[top_pad:top_pad + r, left_pad:left_pad + c, :] = im
+            if top_pad:
+                te_im[0:top_pad, left_pad:left_pad + c, :] = avg_chans
+            if bottom_pad:
+                te_im[r + top_pad:, left_pad:left_pad + c, :] = avg_chans
+            if left_pad:
+                te_im[:, 0:left_pad, :] = avg_chans
+            if right_pad:
+                te_im[:, c + left_pad:, :] = avg_chans
+            im_patch = te_im[int(context_ymin):int(context_ymax + 1),
+                             int(context_xmin):int(context_xmax + 1), :]
+        else:
+            im_patch = im[int(context_ymin):int(context_ymax + 1),
+                          int(context_xmin):int(context_xmax + 1), :]
+        # patch
+        im_patch[0:int((original_sz-s_z)/2),:,:]=avg_chans
+        im_patch[:,0:int((original_sz-s_z)/2),:]=avg_chans
+        im_patch[int((original_sz+s_z)/2):original_sz,:,:]=avg_chans
+        im_patch[:,int((original_sz+s_z)/2):original_sz,:]=avg_chans
+        #
+
+        if not np.array_equal(model_sz, original_sz):
+            im_patch = cv2.resize(im_patch, (model_sz, model_sz))
+        im_patch = im_patch.transpose(2, 0, 1)
+        im_patch = im_patch[np.newaxis, :, :, :]
+        im_patch = im_patch.astype(np.float32)
+        im_patch = torch.from_numpy(im_patch)
+        if cfg.CUDA:
+            im_patch = im_patch.cuda()
+        return im_patch
 
     def get_z_crop(self,img, bbox):
         self.center_pos = np.array([bbox[0] + (bbox[2] - 1) / 2,
@@ -57,42 +143,40 @@ class SiamRPNRBTracker(SiamRPNTracker):
         return self.model.template_rb(z_crop)
 
     @torch.no_grad()
-    def template_upate(self, zf):
+    def template_upate(self, zf, weight):
+        if sum(weight) !=1 or len(weight) !=2:
+            raise ValueError("sum of wight must be 1 and len(weight) must be 2.")
         for idx in range(len(zf)):
-            self.zf_global[idx]=0.9*self.zf_global[idx]+0.1*zf[idx]
+            self.zf_global[idx]=weight[0]*self.zf_global[idx]+weight[1]*zf[idx]
 
         self.model.zf = self.zf_global
 
-    def init_gm(self,z_crop):
-
-        w_z = self.size[0] + cfg.TRACK.CONTEXT_AMOUNT * np.sum(self.size)
-        h_z = self.size[1] + cfg.TRACK.CONTEXT_AMOUNT * np.sum(self.size)
-        s_z = np.sqrt(w_z * h_z)
-        s_x = s_z * (instance_size / cfg.TRACK.EXEMPLAR_SIZE)
-
-        # expend z_crop to x_crop size
-        # x_crop = self.get_subwindow(img, (0,0), instance_size,
-        #                             round(s_x), self.channel_average)
-
-        X = scoremap_sample_reject(score, 2000)
-        X[:, [1, 0]] = X[:, [0, 1]]
-        self.gmm_gt=rubost_track.gmm_fit(X)
-        pass
-
     def check_if_update(self,score,best_score):
 
-        X, _ = rubost_track.scoremap_sample(score)
+        X = rubost_track.scoremap_sample_reject(score,2000)
         X[:, [1, 0]] = X[:, [0, 1]]
-        gmm = rubost_track.gmm_fit(X)
+        print(len(X))
+        if len(X) <= 15:
+            update_state=False
+            return update_state
+        gmm = rubost_track.gmm_fit(X,5)
+        kldiv=rubost_track.KLdiv_gmm(gmm,self.gmm_gt)
+        self.kldiv=kldiv
 
-        # kldiv=rubost_track.KLdiv_gmm(gmm,self.gmm_gt)
-
+        rubost_track.plot_results(X, gmm.predict(X), gmm.means_, gmm.covariances_, 'Gaussian Mixture')
 
         if best_score < cfg.TRACK.CONFIDENCE_LOW:
-            self.update_state = False
+            update_state = False
+            return update_state
         elif best_score > cfg.TRACK.CONFIDENCE_HIGH:
-            self.update_state = True
+            update_state = True
 
+        if kldiv < 1.8:
+            update_state=True
+        else:
+            update_state=False
+
+        return update_state
 
     def track(self, img):
         """
@@ -150,6 +234,7 @@ class SiamRPNRBTracker(SiamRPNTracker):
         else:
             pscore = pscore * (1 - 0.001) + window * 0.001
         best_idx = np.argmax(pscore)
+        # best_idx = np.argmax(score)
 
         bbox = pred_bbox[:, best_idx] / scale_z
         lr = penalty[best_idx] * score[best_idx] * cfg.TRACK.LR
@@ -178,14 +263,13 @@ class SiamRPNRBTracker(SiamRPNTracker):
                 width,
                 height]
 
-        self.check_if_update(score,best_score)
-        print('Update_status: %d' %self.update_state)
+        update_state=self.check_if_update(score,best_score)
 
-        if self.update_state:
-            self.template_upate(self.template(img,bbox))
-            self.template_upate(self.zf_gt)
+        if update_state:
+            self.template_upate(self.template(img,bbox),(0.9,0.1))
             pass
         else:
+            self.template_upate(self.zf_gt, (0.9, 0.1))
             pass
 
         return {
@@ -195,6 +279,8 @@ class SiamRPNRBTracker(SiamRPNTracker):
             'score_size': score_size,
             'score': score,
             'pscore': pscore,
-            'x_crop': x_crop.permute(2, 3, 1, 0).squeeze().cpu().detach().numpy().astype(np.uint8)
+            'x_crop': x_crop.permute(2, 3, 1, 0).squeeze().cpu().detach().numpy().astype(np.uint8),
+            'kldiv':self.kldiv,
+            'update_state':update_state
         }
 

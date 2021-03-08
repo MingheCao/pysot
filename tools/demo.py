@@ -69,7 +69,7 @@ def visualize(outputs,fig,frame_num):
     Y = np.arange(0, score_size, 1)
     X, Y = np.meshgrid(X, Y)
 
-    ax1 = fig.add_subplot(222, projection='3d')
+    ax1 = plt.subplot(121, projection='3d')
     ax1.cla()
     surf = ax1.plot_surface(X, Y, respond, cmap=cm.coolwarm, linewidth=0, antialiased=False)
     ax1.set_zlim(0.0, 1.0)
@@ -77,6 +77,16 @@ def visualize(outputs,fig,frame_num):
     ax1.zaxis.set_major_formatter('{x:.01f}')
     # fig.colorbar(surf, shrink=0.5, aspect=5)
     ##
+
+    plt.pause(0.1)
+
+def add_text_info(outputs,frame_num):
+    instance_size=outputs['instance_size']
+    score_size=outputs['score_size']
+    score = outputs['score']
+    respond = score.reshape(5, score_size, score_size).max(0)
+
+    # add heatmap
     maxval = respond.max()
     minval = respond.min()
     responsemap = (respond - minval) / (maxval - minval) * 255
@@ -85,28 +95,23 @@ def visualize(outputs,fig,frame_num):
     cv2.normalize(heatmap, None, 0, 255, cv2.NORM_MINMAX,
                   cv2.CV_8U)
 
+    # add texts
     frame_show = cv2.addWeighted(outputs['x_crop'], 0.7, heatmap, 0.3, 0)
-    strshow = 'bestscore:' + str(outputs['best_score'])
-    frame_show = cv2.putText(frame_show, strshow, (15, 35), cv2.FONT_HERSHEY_SIMPLEX,
+    strshow = 'frame: ' + str(int(frame_num))
+    frame_show = cv2.putText(frame_show, strshow, (15, 15), cv2.FONT_HERSHEY_SIMPLEX,
                              0.5, (0, 0, 255), 1, cv2.LINE_AA)
-    frame_show = cv2.putText(frame_show, 'frame'+frame_num, (15, 20), cv2.FONT_HERSHEY_SIMPLEX,
+    strshow = 'bestscore:' + str(outputs['best_score']).split('.')[0] + '.' + str(outputs['best_score']).split('.')[1][:3]
+    frame_show = cv2.putText(frame_show, strshow, (110, 15), cv2.FONT_HERSHEY_SIMPLEX,
                              0.5, (0, 0, 255), 1, cv2.LINE_AA)
-    ax2 = fig.add_subplot(221)
-    ax2.cla()
-    ax2.imshow(frame_show[:,:,::-1])
-    plt.xticks([]), plt.yticks([])
+    strshow= 'kldiv:' + str(outputs['kldiv']).split('.')[0] + '.' + str(outputs['kldiv']).split('.')[1][:3]
+    frame_show = cv2.putText(frame_show, strshow, (15, 30), cv2.FONT_HERSHEY_SIMPLEX,
+                             0.5, (0, 0, 255), 1, cv2.LINE_AA)
+    strshow='update:'+ str(outputs['update_state'])
+    frame_show = cv2.putText(frame_show, strshow, (110, 30), cv2.FONT_HERSHEY_SIMPLEX,
+                             0.5, (0, 0, 255), 1, cv2.LINE_AA)
 
-    ##
-    ax3 = fig.add_subplot(223)
-    ax3.cla()
-    idx=np.where(respond>=0.2)
-    ax3.scatter(idx[1], idx[0])
-    ax3.set_xlim(0.0, 25.0)
-    ax3.set_ylim(25.0, 0.0)
+    return frame_show
 
-    rubost_track.plot(score)
-    ##
-    plt.pause(0.1)
 
 
 def main():
@@ -132,10 +137,18 @@ def main():
     else:
         video_name = 'webcam'
     cv2.namedWindow(video_name, cv2.WND_PROP_FULLSCREEN)
+    cv2.moveWindow(video_name, 200, 220)
 
-    fig = plt.figure()
+    cv2.namedWindow('heatmap', cv2.WND_PROP_FULLSCREEN)
+    cv2.moveWindow('heatmap', 650, 220)
 
-    start_frame=10
+    fig = plt.figure(figsize=(6, 2.5))
+    plt.get_current_fig_manager().window.wm_geometry("+1100+220")
+    # mng=plt.get_current_fig_manager()
+    # mng.window.SetPosition((500, 0))
+
+    start_frame=1
+    pluse_frame=20000
 
     for frame,img in get_frames(args.video_name):
         frame_num=img.split('/')[-1].split('.')[0]
@@ -149,17 +162,26 @@ def main():
                 exit()
             tracker.init(frame, init_rect)
             first_frame = False
+
+            outputs=tracker.init_gm(frame)
+
+            visualize(outputs, fig, frame_num)
         else:
             outputs = tracker.track(frame)
 
             visualize(outputs,fig,frame_num)
+            frame_show=add_text_info(outputs,frame_num)
 
             bbox = list(map(int, outputs['bbox']))
             cv2.rectangle(frame, (bbox[0], bbox[1]),
                               (bbox[0]+bbox[2], bbox[1]+bbox[3]),
                               (0, 255, 0), 3)
             cv2.imshow(video_name, frame)
-            cv2.waitKey(1)
+            cv2.imshow('heatmap', frame_show)
+            if int(frame_num) < pluse_frame:
+                cv2.waitKey(1)
+            else:
+                cv2.waitKey(0)
 
 
 if __name__ == '__main__':
