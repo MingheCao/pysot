@@ -7,6 +7,11 @@ from scipy import linalg
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
+from sklearn.cluster import DBSCAN
+from sklearn import metrics
+
+from pysot.pycw import ChineseWhispers
+
 # def scoremap_sample(score):
 #
 #     thre=0.2
@@ -79,6 +84,46 @@ def KLdiv_gm(p, q):
     n = p[1].shape[0]
     return 0.5 * (a - n + b + c)
 
+def KLdiv_gm_weighted(p,q,w_p,w_q):
+    kldiv=KLdiv_gm(p,q)
+    kldiv=w_p*(kldiv+np.log(w_p/w_q))
+    return kldiv
+
+def construct_adjacency_mat(gmm,threshold):
+    n_samples = gmm.n_components
+    distances_mat=np.zeros((n_samples, n_samples))
+
+    for i in range(n_samples):
+        mu_p = gmm.means_[i]
+        cov_p = gmm.covariances_[i]
+        w_p = gmm.weights_[i]
+        for j in range(n_samples):
+            if i==j:
+                continue
+
+            mu_q = gmm.means_[j]
+            cov_q = gmm.covariances_[j]
+            w_q = gmm.weights_[j]
+
+            kldiv=KLdiv_gm_weighted((mu_p,cov_p),(mu_q,cov_q),w_p,w_q)
+            distances_mat[i,j]=kldiv
+
+    adjacency_mat = (1 / (distances_mat + np.identity(n_samples, dtype=np.float64))) * \
+                    (np.ones((n_samples, n_samples), dtype=np.float64) -
+                     np.identity(n_samples, dtype=np.float64))
+
+    adjacency_mat[np.where(adjacency_mat <= 1 / threshold)] = 0.
+    return adjacency_mat
+
+def ChineseWhispers_gm(gmm,threhold):
+
+    adjacency_mat=construct_adjacency_mat(gmm,threhold)
+
+    cw = ChineseWhispers(n_iteration=3, metric='euclidean')
+    predicted_labels = cw.fit_predict_gm(gmm.means_,adjacency_mat)
+    return  predicted_labels
+
+
 color_iter = itertools.cycle(['navy', 'c', 'cornflowerblue', 'gold',
                               'darkorange'])
 
@@ -110,6 +155,51 @@ def plot_results(X, Y_, means, covariances, title):
     plt.xticks(())
     plt.yticks(())
     plt.title(title)
+
+def plot_results_cw(X, Y_, means, covariances, gmm_labels, title):
+    splot = plt.subplot(1, 2, 2)
+    splot.cla()
+    label=np.unique(gmm_labels)
+
+    for j in range(len(label)):
+        idx=np.where(gmm_labels==label[j])
+        means_=means[idx]
+        covariances_=covariances[idx]
+        color=next(color_iter)
+
+        for i, (mean, covar,index) in enumerate(zip(
+                means_, covariances_,idx[0])):
+            v, w = linalg.eigh(covar)
+            v = 2. * np.sqrt(2.) * np.sqrt(v)
+            u = w[0] / linalg.norm(w[0])
+            # as the DP will not use every component it has access to
+            # unless it needs it, we shouldn't plot the redundant
+            # components.
+            if not np.any(Y_ == index):
+                continue
+            plt.scatter(X[Y_ == index, 0], X[Y_ == index, 1], .8, color=color)
+
+            # Plot an ellipse to show the Gaussian component
+            angle = np.arctan(u[1] / u[0])
+            angle = 180. * angle / np.pi  # convert to degrees
+            ell = mpl.patches.Ellipse(mean, v[0], v[1], 180. + angle, color=color)
+            ell.set_clip_box(splot.bbox)
+            ell.set_alpha(0.5)
+            splot.add_artist(ell)
+
+    plt.xlim(0., 25)
+    plt.ylim(25, 0)
+    plt.xticks(())
+    plt.yticks(())
+    plt.title(title)
+
+def dbscan_clustering(X,eps,min_samples):
+    db = DBSCAN(eps=eps, min_samples=min_samples).fit(X)
+    return db
+
+def plot_db(db):
+    db=dbscan_clustering(X,)
+
 
 if __name__ == '__main__':
     score=np.load('/home/rislab/Workspace/pysot/tools/aa.npy')
