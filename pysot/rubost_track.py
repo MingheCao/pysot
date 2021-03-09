@@ -156,7 +156,7 @@ def plot_results(X, Y_, means, covariances, title):
     plt.yticks(())
     plt.title(title)
 
-def plot_results_cw(X, Y_, means, covariances, gmm_labels, title):
+def plot_results_cw(X, Y_, means, covariances, gmm_labels, center_label,title):
     splot = plt.subplot(1, 2, 2)
     splot.cla()
     label=np.unique(gmm_labels)
@@ -165,7 +165,10 @@ def plot_results_cw(X, Y_, means, covariances, gmm_labels, title):
         idx=np.where(gmm_labels==label[j])
         means_=means[idx]
         covariances_=covariances[idx]
-        color=next(color_iter)
+        if label[j]==center_label:
+            color='r'
+        else:
+            color=next(color_iter)
 
         for i, (mean, covar,index) in enumerate(zip(
                 means_, covariances_,idx[0])):

@@ -151,7 +151,24 @@ class SiamRPNRBTracker(SiamRPNTracker):
 
         self.model.zf = self.zf_global
 
-    def check_if_update(self, score, best_score):
+    def get_center_gms(self,gmm,labels,score_sz):
+        label=np.unique(labels)
+        means=np.zeros((len(label),2))
+
+        for i, lb in enumerate(label):
+            idx=np.where(labels==lb)
+            mu=gmm.means_[idx]
+            weight=gmm.weights_[idx]
+            weight/=weight.sum()
+            mu=mu*weight.reshape(-1,1)
+            means[i,:]=mu.sum(axis=0)-score_sz/2
+
+        dist=means*means
+        dist=dist.reshape(-1,2).sum(axis=1)
+        return label[np.argmin(dist)],means[np.argmin(dist),:]
+
+
+    def check_if_update(self, score, best_score,score_size):
 
         X = rubost_track.scoremap_sample_reject(score, 2000)
         X[:, [1, 0]] = X[:, [0, 1]]
@@ -160,10 +177,10 @@ class SiamRPNRBTracker(SiamRPNTracker):
             update_state = False
             return update_state
         gmm = rubost_track.gmm_fit(X, 6)
+        labels = rubost_track.ChineseWhispers_gm(gmm, 4)
+        center_label,mean=self.get_center_gms(gmm,labels,score_size)
 
-        labels = rubost_track.ChineseWhispers_gm(gmm, 5)
-
-        rubost_track.plot_results_cw(X, gmm.predict(X), gmm.means_, gmm.covariances_, labels, 'Gaussian Mixture')
+        rubost_track.plot_results_cw(X, gmm.predict(X), gmm.means_, gmm.covariances_, labels, center_label,'Gaussian Mixture')
 
         kldiv = rubost_track.KLdiv_gmm(gmm, self.gmm_gt)
         self.kldiv = kldiv
@@ -266,7 +283,7 @@ class SiamRPNRBTracker(SiamRPNTracker):
                 width,
                 height]
 
-        update_state = self.check_if_update(score, best_score)
+        update_state = self.check_if_update(score, best_score,score_size)
 
         if update_state:
             self.template_upate(self.template(img, bbox), 0.05)
