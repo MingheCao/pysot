@@ -55,16 +55,16 @@ def gmm_fit(X,n_components):
 
 def KLdiv_gmm(gmm_p,gmm_q):
     res=0.
-    for i in range(gmm_p.n_components):
-        mu_p=gmm_p.means_[i]
-        cov_p=gmm_p.covariances_[i]
-        w_p=gmm_p.weights_[i]
+    for i in range(gmm_p['n_components']):
+        mu_p=gmm_p['means_'][i]
+        cov_p=gmm_p['covariances_'][i]
+        w_p=gmm_p['weights_'][i]
         min_div = float("inf")
 
-        for j in range(gmm_q.n_components):
-            mu_q = gmm_q.means_[j]
-            cov_q = gmm_q.covariances_[j]
-            w_q = gmm_q.weights_[j]
+        for j in range(gmm_q['n_components']):
+            mu_q = gmm_q['means_'][j]
+            cov_q = gmm_q['covariances_'][j]
+            w_q = gmm_q['weights_'][j]
 
             div=KLdiv_gm((mu_p,cov_p),(mu_q,cov_q))
 
@@ -74,6 +74,23 @@ def KLdiv_gmm(gmm_p,gmm_q):
         res+=w_p*min_div
 
     return res
+
+def KLdiv_gmm_index(gmm_p,gmm_q,index):
+    gmm1={
+        'means_':gmm_p.means_[index],
+        'covariances_':gmm_p.covariances_[index],
+        'weights_':gmm_p.weights_[index],
+        'n_components':len(index[0])
+    }
+    gmm2={
+        'means_':gmm_q.means_,
+        'covariances_':gmm_q.covariances_,
+        'weights_':gmm_q.weights_,
+        'n_components':gmm_q.n_components
+    }
+
+    kldiv=KLdiv_gmm(gmm1,gmm2)
+    return kldiv
 
 # p = (mu1, Sigma1) = np.transpose(np.array([0.2, 0.1, 0.5, 0.4])), np.diag([0.14, 0.52, 0.2, 0.4])
 # q = (mu2, Sigma2) = np.transpose(np.array([0.3, 0.6, -0.5, -0.8])), np.diag([0.24, 0.02, 0.31, 0.51])

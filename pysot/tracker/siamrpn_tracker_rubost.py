@@ -168,35 +168,60 @@ class SiamRPNRBTracker(SiamRPNTracker):
         return label[np.argmin(dist)],means[np.argmin(dist),:]
 
 
-    def check_if_update(self, score, best_score,score_size):
+    def check_if_update(self, score,score_size):
 
         X = rubost_track.scoremap_sample_reject(score, 2000)
         X[:, [1, 0]] = X[:, [0, 1]]
         # print(len(X))
         if len(X) <= 15:
-            update_state = False
-            return update_state
+            return False
+
         gmm = rubost_track.gmm_fit(X, 6)
-        labels = rubost_track.ChineseWhispers_gm(gmm, 4)
-        center_label,mean=self.get_center_gms(gmm,labels,score_size)
+        labels = rubost_track.ChineseWhispers_gm(gmm, 2)
+        center_label,center_mean=self.get_center_gms(gmm,labels,score_size)
+        self.center_mean=center_mean
 
         rubost_track.plot_results_cw(X, gmm.predict(X), gmm.means_, gmm.covariances_, labels, center_label,'Gaussian Mixture')
 
-        kldiv = rubost_track.KLdiv_gmm(gmm, self.gmm_gt)
+        kldiv = rubost_track.KLdiv_gmm_index(gmm, self.gmm_gt,np.where(labels==center_label))
         self.kldiv = kldiv
 
-        if best_score < cfg.TRACK.CONFIDENCE_LOW:
-            update_state = False
-            return update_state
-        elif best_score > cfg.TRACK.CONFIDENCE_HIGH:
-            update_state = True
+        return True if kldiv < 1.8 else False
 
-        if kldiv < 1.8:
-            update_state = True
+    def calc_penalty(self,pred_bbox,scale_z):
+        def change(r):
+            return np.maximum(r, 1. / r)
+
+        def sz(w, h):
+            pad = (w + h) * 0.5
+            return np.sqrt((w + pad) * (h + pad))
+
+        # scale penalty
+        s_c = change(sz(pred_bbox[2, :], pred_bbox[3, :]) /
+                     (sz(self.size[0] * scale_z, self.size[1] * scale_z)))
+        # ratio penalty
+        r_c = change((self.size[0] / self.size[1]) /
+                     (pred_bbox[2, :] / pred_bbox[3, :]))
+        penalty = np.exp(-(r_c * s_c - 1) * cfg.TRACK.PENALTY_K)
+        return penalty
+
+    def penalize_score(self,score,penalty,score_size):
+
+        pscore = penalty * score
+
+        hanning = np.hanning(score_size)
+        window = np.outer(hanning, hanning)
+        window = np.tile(window.flatten(), self.anchor_num)
+
+        # window
+        if not self.longterm_state:
+            pscore = pscore * (1 - cfg.TRACK.WINDOW_INFLUENCE) + \
+                     window * cfg.TRACK.WINDOW_INFLUENCE
         else:
-            update_state = False
+            pscore = pscore * (1 - 0.001) + window * 0.001
+        return pscore
 
-        return update_state
+
 
     def track(self, img):
         """
@@ -215,12 +240,8 @@ class SiamRPNRBTracker(SiamRPNTracker):
         h_z = self.size[1] + cfg.TRACK.CONTEXT_AMOUNT * np.sum(self.size)
         s_z = np.sqrt(w_z * h_z)
         scale_z = cfg.TRACK.EXEMPLAR_SIZE / s_z
-
         score_size = (instance_size - cfg.TRACK.EXEMPLAR_SIZE) // \
                      cfg.ANCHOR.STRIDE + 1 + cfg.TRACK.BASE_SIZE
-        hanning = np.hanning(score_size)
-        window = np.outer(hanning, hanning)
-        window = np.tile(window.flatten(), self.anchor_num)
         anchors = self.generate_anchor(score_size)
 
         s_x = s_z * (instance_size / cfg.TRACK.EXEMPLAR_SIZE)
@@ -231,35 +252,19 @@ class SiamRPNRBTracker(SiamRPNTracker):
         score = self._convert_score(outputs['cls'])
         pred_bbox = self._convert_bbox(outputs['loc'], anchors)
 
-        def change(r):
-            return np.maximum(r, 1. / r)
+        penalty = self.calc_penalty(pred_bbox, scale_z)
+        pscore=self.penalize_score(score, penalty, score_size)
 
-        def sz(w, h):
-            pad = (w + h) * 0.5
-            return np.sqrt((w + pad) * (h + pad))
+        update_state = self.check_if_update(score,score_size)
 
-        # scale penalty
-        s_c = change(sz(pred_bbox[2, :], pred_bbox[3, :]) /
-                     (sz(self.size[0] * scale_z, self.size[1] * scale_z)))
-        # ratio penalty
-        r_c = change((self.size[0] / self.size[1]) /
-                     (pred_bbox[2, :] / pred_bbox[3, :]))
-        penalty = np.exp(-(r_c * s_c - 1) * cfg.TRACK.PENALTY_K)
-        pscore = penalty * score
-
-        # window
-        if not self.longterm_state:
-            pscore = pscore * (1 - cfg.TRACK.WINDOW_INFLUENCE) + \
-                     window * cfg.TRACK.WINDOW_INFLUENCE
-        else:
-            pscore = pscore * (1 - 0.001) + window * 0.001
         best_idx = np.argmax(pscore)
-        # best_idx = np.argmax(score)
-
-        bbox = pred_bbox[:, best_idx] / scale_z
-        lr = penalty[best_idx] * score[best_idx] * cfg.TRACK.LR
-
         best_score = score[best_idx]
+        bbox = pred_bbox[:, best_idx] / scale_z
+
+        if best_score < cfg.TRACK.CONFIDENCE_LOW:
+            update_state=False
+
+        lr = penalty[best_idx] * score[best_idx] * cfg.TRACK.LR
         if best_score >= cfg.TRACK.CONFIDENCE_LOW:
             cx = bbox[0] + self.center_pos[0]
             cy = bbox[1] + self.center_pos[1]
@@ -267,8 +272,8 @@ class SiamRPNRBTracker(SiamRPNTracker):
             width = self.size[0] * (1 - lr) + bbox[2] * lr
             height = self.size[1] * (1 - lr) + bbox[3] * lr
         else:
-            cx = self.center_pos[0]
-            cy = self.center_pos[1]
+            cx = self.center_mean[0]/scale_z+self.center_pos[0]
+            cy = self.center_mean[1]/scale_z+self.center_pos[0]
 
             width = self.size[0]
             height = self.size[1]
@@ -283,13 +288,12 @@ class SiamRPNRBTracker(SiamRPNTracker):
                 width,
                 height]
 
-        update_state = self.check_if_update(score, best_score,score_size)
 
         if update_state:
             self.template_upate(self.template(img, bbox), 0.05)
             pass
         else:
-            self.template_upate(self.zf_gt, 0.1)
+            self.template_upate(self.zf_gt, 0.05)
             pass
 
         return {
