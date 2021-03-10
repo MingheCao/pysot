@@ -32,6 +32,7 @@ class SiamRPNRBTracker(SiamRPNTracker):
         self.model.template(z_crop)
         self.zf_gt = self.model.zf
         self.zf_global = self.model.zf
+        self.instance_sizes=[cfg.TRACK.INSTANCE_SIZE,cfg.TRACK.LOST_INSTANCE_SIZE]
 
     def init_gm(self, img):
 
@@ -177,7 +178,8 @@ class SiamRPNRBTracker(SiamRPNTracker):
         X = rubost_track.scoremap_sample_reject(score, 2000)
         X[:, [1, 0]] = X[:, [0, 1]]
         # print(len(X))
-        if len(X) <= 15:
+        if len(X) <= 20:
+            self.kldiv = 100.
             return False
 
         gmm = rubost_track.gmm_fit(X, 6)
@@ -226,7 +228,6 @@ class SiamRPNRBTracker(SiamRPNTracker):
         return pscore
 
 
-
     def track(self, img):
         """
         args:
@@ -239,7 +240,7 @@ class SiamRPNRBTracker(SiamRPNTracker):
             instance_size = cfg.TRACK.LOST_INSTANCE_SIZE
         else:
             instance_size = cfg.TRACK.INSTANCE_SIZE
-
+        
         w_z = self.size[0] + cfg.TRACK.CONTEXT_AMOUNT * np.sum(self.size)
         h_z = self.size[1] + cfg.TRACK.CONTEXT_AMOUNT * np.sum(self.size)
         s_z = np.sqrt(w_z * h_z)
@@ -308,5 +309,7 @@ class SiamRPNRBTracker(SiamRPNTracker):
             'pscore': pscore,
             'x_crop': x_crop.permute(2, 3, 1, 0).squeeze().cpu().detach().numpy().astype(np.uint8),
             'kldiv': self.kldiv,
-            'update_state': update_state
+            'update_state': update_state,
+            'instance_size':instance_size,
+            's_x':s_x
         }

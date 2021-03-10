@@ -176,6 +176,12 @@ def main():
             cv2.rectangle(frame, (bbox[0], bbox[1]),
                               (bbox[0]+bbox[2], bbox[1]+bbox[3]),
                               (0, 255, 0), 3)
+            rect_length=outputs['s_x']
+            cor_x=int(bbox[0]+bbox[2]/2 - rect_length/2)
+            cor_y=int(bbox[1]+bbox[3]/2 - rect_length/2)
+            cv2.rectangle(frame, (cor_x, cor_y),
+                          (int(cor_x+rect_length), int(cor_y+rect_length)),
+                          (0, 0, 255), 3)
             cv2.imshow(video_name, frame)
             cv2.imshow('heatmap', frame_show)
             if int(frame_num) < pluse_frame:
