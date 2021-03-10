@@ -168,7 +168,8 @@ def main():
                 if args.vis and idx > 0:
                     gt_bbox = list(map(int, gt_bbox))
                     pred_bbox = list(map(int, pred_bbox))
-                    cv2.rectangle(img, (gt_bbox[0], gt_bbox[1]),
+                    if len(gt_bbox) ==4 :
+                        cv2.rectangle(img, (gt_bbox[0], gt_bbox[1]),
                                   (gt_bbox[0]+gt_bbox[2], gt_bbox[1]+gt_bbox[3]), (0, 255, 0), 3)
                     cv2.rectangle(img, (pred_bbox[0], pred_bbox[1]),
                                   (pred_bbox[0]+pred_bbox[2], pred_bbox[1]+pred_bbox[3]), (0, 255, 255), 3)

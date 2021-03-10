@@ -148,7 +148,7 @@ def main():
     # mng.window.SetPosition((500, 0))
 
     start_frame=1
-    pluse_frame=100
+    pluse_frame=20
 
     for frame,img in get_frames(args.video_name):
         frame_num=img.split('/')[-1].split('.')[0]
