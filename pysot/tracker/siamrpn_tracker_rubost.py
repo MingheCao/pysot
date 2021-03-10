@@ -151,7 +151,7 @@ class SiamRPNRBTracker(SiamRPNTracker):
 
         self.model.zf = self.zf_global
 
-    def get_center_gms(self,gmm,labels,score_sz):
+    def get_center_gms(self,X,gmm,labels,score_sz):
         label=np.unique(labels)
         means=np.zeros((len(label),2))
 
@@ -165,7 +165,11 @@ class SiamRPNRBTracker(SiamRPNTracker):
 
         dist=means*means
         dist=dist.reshape(-1,2).sum(axis=1)
-        return label[np.argmin(dist)],means[np.argmin(dist),:]
+        center_label=label[np.argmin(dist)]
+
+        center_mean=X[gmm.predict(X)==center_label,:].mean(axis=0) -score_sz/2
+
+        return center_label,center_mean
 
 
     def check_if_update(self, score,score_size):
@@ -178,7 +182,7 @@ class SiamRPNRBTracker(SiamRPNTracker):
 
         gmm = rubost_track.gmm_fit(X, 6)
         labels = rubost_track.ChineseWhispers_gm(gmm, 2)
-        center_label,center_mean=self.get_center_gms(gmm,labels,score_size)
+        center_label,center_mean=self.get_center_gms(X,gmm,labels,score_size)
         self.center_mean=center_mean
 
         rubost_track.plot_results_cw(X, gmm.predict(X), gmm.means_, gmm.covariances_, labels, center_label,'Gaussian Mixture')
@@ -186,7 +190,7 @@ class SiamRPNRBTracker(SiamRPNTracker):
         kldiv = rubost_track.KLdiv_gmm_index(gmm, self.gmm_gt,np.where(labels==center_label))
         self.kldiv = kldiv
 
-        return True if kldiv < 1.8 else False
+        return True if kldiv < 1.5 else False
 
     def calc_penalty(self,pred_bbox,scale_z):
         def change(r):
@@ -205,7 +209,7 @@ class SiamRPNRBTracker(SiamRPNTracker):
         penalty = np.exp(-(r_c * s_c - 1) * cfg.TRACK.PENALTY_K)
         return penalty
 
-    def penalize_score(self,score,penalty,score_size):
+    def penalize_score(self,score,penalty,score_size,update_state):
 
         pscore = penalty * score
 
@@ -214,7 +218,7 @@ class SiamRPNRBTracker(SiamRPNTracker):
         window = np.tile(window.flatten(), self.anchor_num)
 
         # window
-        if not self.longterm_state:
+        if update_state:
             pscore = pscore * (1 - cfg.TRACK.WINDOW_INFLUENCE) + \
                      window * cfg.TRACK.WINDOW_INFLUENCE
         else:
@@ -252,10 +256,10 @@ class SiamRPNRBTracker(SiamRPNTracker):
         score = self._convert_score(outputs['cls'])
         pred_bbox = self._convert_bbox(outputs['loc'], anchors)
 
-        penalty = self.calc_penalty(pred_bbox, scale_z)
-        pscore=self.penalize_score(score, penalty, score_size)
-
         update_state = self.check_if_update(score,score_size)
+
+        penalty = self.calc_penalty(pred_bbox, scale_z)
+        pscore=self.penalize_score(score, penalty, score_size,update_state)
 
         best_idx = np.argmax(pscore)
         best_score = score[best_idx]
@@ -272,8 +276,8 @@ class SiamRPNRBTracker(SiamRPNTracker):
             width = self.size[0] * (1 - lr) + bbox[2] * lr
             height = self.size[1] * (1 - lr) + bbox[3] * lr
         else:
-            cx = self.center_mean[0]/scale_z+self.center_pos[0]
-            cy = self.center_mean[1]/scale_z+self.center_pos[0]
+            cx = self.center_mean[1]/scale_z+self.center_pos[0]
+            cy = self.center_mean[0]/scale_z+self.center_pos[0]
 
             width = self.size[0]
             height = self.size[1]
@@ -288,12 +292,11 @@ class SiamRPNRBTracker(SiamRPNTracker):
                 width,
                 height]
 
-
         if update_state:
-            self.template_upate(self.template(img, bbox), 0.05)
+            self.template_upate(self.template(img, bbox), 0.1)
+            self.template_upate(self.zf_gt, 0.05)
             pass
         else:
-            self.template_upate(self.zf_gt, 0.05)
             pass
 
         return {
