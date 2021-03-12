@@ -110,3 +110,6 @@ demo/*
 tools/logs/*
 tools/results/*
 toolkit/utils/region.c
+
+.idea/*
+rb_result/

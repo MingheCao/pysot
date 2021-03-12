@@ -132,7 +132,7 @@ def construct_adjacency_mat(gmm,threshold):
     adjacency_mat[np.where(adjacency_mat <= 1 / threshold)] = 0.
     return adjacency_mat
 
-def ChineseWhispers_gm(gmm,threhold):
+def ChineseWhispers_gm(gmm,threhold = 2):
 
     adjacency_mat=construct_adjacency_mat(gmm,threhold)
 

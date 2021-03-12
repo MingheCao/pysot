@@ -147,8 +147,11 @@ def main():
     # mng=plt.get_current_fig_manager()
     # mng.window.SetPosition((500, 0))
 
-    start_frame=1
-    pluse_frame=20
+    total_frames=len(glob(os.path.join(args.video_name, '*.jp*')))
+    rects = np.zeros((total_frames, 4))
+
+    start_frame=0
+    pluse_frame=total_frames
 
     for frame,img in get_frames(args.video_name):
         frame_num=img.split('/')[-1].split('.')[0]
@@ -157,7 +160,10 @@ def main():
 
         if first_frame:
             try:
-                init_rect = cv2.selectROI(video_name, frame, False, False)
+                # init_rect = cv2.selectROI(video_name, frame, False, False)
+                gt_rects = np.loadtxt(args.video_name.replace('img', 'groundtruth_rect.txt'), delimiter=',',
+                                      dtype='int')
+                init_rect = gt_rects[int(frame_num), :]
             except:
                 exit()
             tracker.init(frame, init_rect)
@@ -168,6 +174,7 @@ def main():
             visualize(outputs, fig, frame_num)
         else:
             outputs = tracker.track(frame)
+            rects[int(frame_num) - 1, :] = np.array(outputs['bbox'])
 
             visualize(outputs,fig,frame_num)
             frame_show=add_text_info(outputs,frame_num)
@@ -188,6 +195,11 @@ def main():
                 cv2.waitKey(1)
             else:
                 cv2.waitKey(0)
+                data_name = args.video_name.split('/')[-2]
+                path=args.video_name.replace('testing_dataset/OTB100/'+data_name+'/img', \
+                                             'rb_result/' + data_name + '/' + str(start_frame) + '_' + \
+                                             str(pluse_frame)+ '.txt')
+                np.savetxt(path, rects)
 
 
 if __name__ == '__main__':

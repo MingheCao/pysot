@@ -34,6 +34,8 @@ class SiamRPNRBTracker(SiamRPNTracker):
         self.zf_global = self.model.zf
         self.instance_sizes=[cfg.TRACK.INSTANCE_SIZE,cfg.TRACK.LOST_INSTANCE_SIZE]
 
+        self.visualize = True
+
     def init_gm(self, img):
 
         instance_size = cfg.TRACK.INSTANCE_SIZE
@@ -173,26 +175,37 @@ class SiamRPNRBTracker(SiamRPNTracker):
         return center_label,center_mean
 
 
-    def check_if_update(self, score,score_size):
+    def kldiv_state(self, score,score_size):
 
-        X = rubost_track.scoremap_sample_reject(score, 2000)
+        num_sample=2000
+        X = rubost_track.scoremap_sample_reject(score, num_sample)
         X[:, [1, 0]] = X[:, [0, 1]]
         # print(len(X))
-        if len(X) <= 20:
-            self.kldiv = 100.
+        if len(X) <= int(num_sample/100):
+            self.kldiv = 1000.
+            self.state_sampling=False
             return False
+        else:
+            self.state_sampling = True
 
         gmm = rubost_track.gmm_fit(X, 6)
-        labels = rubost_track.ChineseWhispers_gm(gmm, 2)
+        labels = rubost_track.ChineseWhispers_gm(gmm, threhold = 1.5)
         center_label,center_mean=self.get_center_gms(X,gmm,labels,score_size)
         self.center_mean=center_mean
 
-        rubost_track.plot_results_cw(X, gmm.predict(X), gmm.means_, gmm.covariances_, labels, center_label,'Gaussian Mixture')
+        if self.visualize==True:
+            rubost_track.plot_results_cw(X, gmm.predict(X), gmm.means_, gmm.covariances_, labels, center_label,'Gaussian Mixture')
 
         kldiv = rubost_track.KLdiv_gmm_index(gmm, self.gmm_gt,np.where(labels==center_label))
         self.kldiv = kldiv
 
-        return True if kldiv < 1.5 else False
+        if kldiv < 1.5:
+            return True
+        else:
+            return False
+
+    def check_if_update(self, score, score_size):
+        pass
 
     def calc_penalty(self,pred_bbox,scale_z):
         def change(r):
@@ -257,31 +270,41 @@ class SiamRPNRBTracker(SiamRPNTracker):
         score = self._convert_score(outputs['cls'])
         pred_bbox = self._convert_bbox(outputs['loc'], anchors)
 
-        update_state = self.check_if_update(score,score_size)
+        best_idx = np.argmax(score)
+        best_score=score[best_idx]
 
-        penalty = self.calc_penalty(pred_bbox, scale_z)
-        pscore=self.penalize_score(score, penalty, score_size,update_state)
+        if best_score <= cfg.TRACK.CONFIDENCE_LOW:
+            self.state_update = False
+            self.state_tracking = False
+            self.state_penalize = False
 
-        best_idx = np.argmax(pscore)
-        best_score = score[best_idx]
-        bbox = pred_bbox[:, best_idx] / scale_z
+            cx = self.center_mean[1]/scale_z+self.center_pos[0]
+            cy = self.center_mean[0]/scale_z+self.center_pos[0]
 
-        if best_score < cfg.TRACK.CONFIDENCE_LOW:
-            update_state=False
+            # cx = self.center_pos[0]
+            # cy = self.center_pos[0]
 
-        lr = penalty[best_idx] * score[best_idx] * cfg.TRACK.LR
-        if best_score >= cfg.TRACK.CONFIDENCE_LOW:
+            width = self.size[0]
+            height = self.size[1]
+        else:
+
+            self.state_kldiv = self.kldiv_state(score,score_size)
+
+            penalty = self.calc_penalty(pred_bbox, scale_z)
+            pscore=self.penalize_score(score, penalty, score_size,True)
+
+            best_idx = np.argmax(pscore)
+            best_score = score[best_idx]
+            bbox = pred_bbox[:, best_idx] / scale_z
+
+            lr = penalty[best_idx] * score[best_idx] * cfg.TRACK.LR
+
             cx = bbox[0] + self.center_pos[0]
             cy = bbox[1] + self.center_pos[1]
 
             width = self.size[0] * (1 - lr) + bbox[2] * lr
             height = self.size[1] * (1 - lr) + bbox[3] * lr
-        else:
-            cx = self.center_mean[1]/scale_z+self.center_pos[0]
-            cy = self.center_mean[0]/scale_z+self.center_pos[0]
 
-            width = self.size[0]
-            height = self.size[1]
 
         self.center_pos = np.array([cx, cy])
         self.size = np.array([width, height])
@@ -293,6 +316,7 @@ class SiamRPNRBTracker(SiamRPNTracker):
                 width,
                 height]
 
+        update_state=True
         if update_state:
             self.template_upate(self.template(img, bbox), 0.1)
             self.template_upate(self.zf_gt, 0.05)
@@ -310,6 +334,5 @@ class SiamRPNRBTracker(SiamRPNTracker):
             'x_crop': x_crop.permute(2, 3, 1, 0).squeeze().cpu().detach().numpy().astype(np.uint8),
             'kldiv': self.kldiv,
             'update_state': update_state,
-            'instance_size':instance_size,
             's_x':s_x
         }

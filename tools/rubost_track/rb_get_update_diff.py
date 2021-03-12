@@ -24,7 +24,6 @@ parser.add_argument('--video_name', default='', type=str,
                     help='videos or image files')
 args = parser.parse_args()
 
-
 def get_frames(video_name):
     if not video_name:
         cap = cv2.VideoCapture(0)
@@ -50,6 +49,7 @@ def get_frames(video_name):
         images = glob(os.path.join(video_name, '*.jp*'))
         images = sorted(images,
                         key=lambda x: int(x.split('/')[-1].split('.')[0]))
+        total_frames=len(images)
         for img in images:
             frame = cv2.imread(img)
             yield frame,img
@@ -79,8 +79,12 @@ def main():
         video_name = 'webcam'
     cv2.namedWindow(video_name, cv2.WND_PROP_FULLSCREEN)
 
-    start_frame=2
-    pluse_frame=60
+    total_frames = len(glob(os.path.join(args.video_name, '*.jp*')))
+
+    start_frame=200
+    pluse_frame=total_frames
+
+    rects=np.zeros((total_frames,4))
 
     for frame,img in get_frames(args.video_name):
         frame_num=img.split('/')[-1].split('.')[0]
@@ -98,6 +102,7 @@ def main():
             first_frame = False
         else:
             outputs = tracker.track(frame)
+            rects[int(frame_num) -1,:] = np.array(outputs['bbox'])
             if 'polygon' in outputs:
                 polygon = np.array(outputs['polygon']).astype(np.int32)
                 cv2.polylines(frame, [polygon.reshape((-1, 1, 2))],
@@ -120,7 +125,13 @@ def main():
             if int(frame_num) < pluse_frame:
                 cv2.waitKey(1)
             else:
+                data_name = args.video_name.split('/')[-2]
+                path=args.video_name.replace('testing_dataset/OTB100/'+data_name+'/img', \
+                                             'rb_result/' + data_name + '/' + str(start_frame) + '_' + \
+                                             str(pluse_frame)+ '.txt')
+                np.savetxt(path, rects)
                 cv2.waitKey(0)
+
 
 
 if __name__ == '__main__':
