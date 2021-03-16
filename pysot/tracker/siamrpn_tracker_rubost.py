@@ -194,7 +194,7 @@ class SiamRPNRBTracker(SiamRPNTracker):
         self.center_mean=center_mean
 
         if self.visualize==True:
-            rubost_track.plot_results_cw(X, gmm.predict(X), gmm.means_, gmm.covariances_, labels, center_label,'Gaussian Mixture')
+            rubost_track.plot_results_cw(X, gmm.predict(X), gmm.means_, gmm.covariances_, labels, center_label,'1,2,2','Gaussian Mixture')
 
         kldiv = rubost_track.KLdiv_gmm_index(gmm, self.gmm_gt,np.where(labels==center_label))
         self.kldiv = kldiv
@@ -330,7 +330,6 @@ class SiamRPNRBTracker(SiamRPNTracker):
             'instance_size': instance_size,
             'score_size': score_size,
             'score': score,
-            'pscore': pscore,
             'x_crop': x_crop.permute(2, 3, 1, 0).squeeze().cpu().detach().numpy().astype(np.uint8),
             'kldiv': self.kldiv,
             'update_state': update_state,

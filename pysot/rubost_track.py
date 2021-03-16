@@ -7,11 +7,15 @@ from scipy import linalg
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
+from matplotlib import cm
+from matplotlib.ticker import LinearLocator
+
 from sklearn.cluster import DBSCAN
 from sklearn import metrics
 
 from pysot.pycw import ChineseWhispers
 
+import cv2
 # def scoremap_sample(score):
 #
 #     thre=0.2
@@ -141,11 +145,11 @@ def ChineseWhispers_gm(gmm,threhold = 2):
     return  predicted_labels
 
 
-color_iter = itertools.cycle(['navy', 'c', 'cornflowerblue', 'gold',
-                              'darkorange'])
+color_iter = itertools.cycle(['r','navy', 'c', 'cornflowerblue', 'gold',
+                              'darkorange','g'])
 
-def plot_results(X, Y_, means, covariances, title):
-    splot = plt.subplot(1, 2, 2)
+def plot_results(X, Y_, means, covariances, subplots,title):
+    splot = plt.subplot(int(subplots.split(',')[0]), int(subplots.split(',')[1]), int(subplots.split(',')[2]))
     splot.cla()
     for i, (mean, covar, color) in enumerate(zip(
             means, covariances, color_iter)):
@@ -173,8 +177,8 @@ def plot_results(X, Y_, means, covariances, title):
     plt.yticks(())
     plt.title(title)
 
-def plot_results_cw(X, Y_, means, covariances, gmm_labels, center_label,title):
-    splot = plt.subplot(1, 2, 2)
+def plot_results_cw(X, Y_, means, covariances, gmm_labels, center_label,subplots,title):
+    splot = plt.subplot(int(subplots.split(',')[0]), int(subplots.split(',')[1]), int(subplots.split(',')[2]))
     splot.cla()
     label=np.unique(gmm_labels)
 
@@ -212,6 +216,90 @@ def plot_results_cw(X, Y_, means, covariances, gmm_labels, center_label,title):
     plt.xticks(())
     plt.yticks(())
     plt.title(title)
+
+def visualize_response3d(outputs,fig,subplots,frame_num):
+    instance_size=outputs['instance_size']
+    score_size=outputs['score_size']
+    score = outputs['score']
+    respond = score.reshape(5, score_size, score_size).max(0)
+    X = np.arange(0, score_size, 1)
+    Y = np.arange(score_size, 0, -1)
+    X, Y = np.meshgrid(X, Y)
+
+    ax1 = plt.subplot(int(subplots.split(',')[0]), int(subplots.split(',')[1]), int(subplots.split(',')[2]),projection='3d')
+    # ax1 = plt.subplot(121, projection='3d')
+    ax1.cla()
+    surf = ax1.plot_surface(X, Y, respond, cmap=cm.coolwarm, linewidth=0, antialiased=False)
+    ax1.set_zlim(0.0, 1.0)
+    ax1.zaxis.set_major_locator(LinearLocator(5))
+    ax1.zaxis.set_major_formatter('{x:.01f}')
+    # fig.colorbar(surf, shrink=0.4, aspect=5)
+
+    plt.xticks([])
+    plt.yticks([])
+    ##
+
+    # plt.savefig('/home/rislab/Workspace/pysot/rb_result/templates/respond_3d.png', dpi=300, bbox_inches='tight')
+
+    plt.pause(0.1)
+
+def add_text_info(outputs,frame_num):
+    instance_size=outputs['instance_size']
+    score_size=outputs['score_size']
+    score = outputs['score']
+    respond = score.reshape(5, score_size, score_size).max(0)
+
+    # add heatmap
+    maxval = respond.max()
+    minval = respond.min()
+    responsemap = (respond - minval) / (maxval - minval) * 255
+    heatmap = cv2.resize(responsemap.astype(np.uint8), (instance_size, instance_size), interpolation=cv2.INTER_LINEAR)
+    heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+    cv2.normalize(heatmap, None, 0, 255, cv2.NORM_MINMAX,
+                  cv2.CV_8U)
+
+    # add texts
+    frame_show = cv2.addWeighted(outputs['x_crop'], 0.7, heatmap, 0.3, 0)
+    strshow = 'frame: ' + str(int(frame_num))
+    frame_show = cv2.putText(frame_show, strshow, (15, 15), cv2.FONT_HERSHEY_SIMPLEX,
+                             0.5, (0, 0, 255), 1, cv2.LINE_AA)
+    strshow = 'bestscore:' + str(outputs['best_score']).split('.')[0] + '.' + str(outputs['best_score']).split('.')[1][:3]
+    frame_show = cv2.putText(frame_show, strshow, (110, 15), cv2.FONT_HERSHEY_SIMPLEX,
+                             0.5, (0, 0, 255), 1, cv2.LINE_AA)
+    strshow= 'kldiv:' + str(outputs['kldiv']).split('.')[0] + '.' + str(outputs['kldiv']).split('.')[1][:3]
+    frame_show = cv2.putText(frame_show, strshow, (15, 30), cv2.FONT_HERSHEY_SIMPLEX,
+                             0.5, (0, 0, 255), 1, cv2.LINE_AA)
+    strshow='update:'+ str(outputs['update_state'])
+    frame_show = cv2.putText(frame_show, strshow, (110, 30), cv2.FONT_HERSHEY_SIMPLEX,
+                             0.5, (0, 0, 255), 1, cv2.LINE_AA)
+
+    return frame_show
+
+def plot_search_area(outputs,frame):
+    rect_length = outputs['s_x']
+    bbox = list(map(int, outputs['bbox']))
+    cor_x = int(bbox[0] + bbox[2] / 2 - rect_length / 2)
+    cor_y = int(bbox[1] + bbox[3] / 2 - rect_length / 2)
+    cv2.rectangle(frame, (cor_x, cor_y),
+                  (int(cor_x + rect_length), int(cor_y + rect_length)),
+                  (0, 0, 255), 3)
+    return frame
+
+def visualze_template(template,num):
+    temp=template.permute(2, 3, 1, 0).squeeze().cpu().detach().numpy()
+
+    heatmap=temp[:,:,1]
+    heatmap=cv2.normalize(heatmap, None, 0, 255, cv2.NORM_MINMAX,
+                  cv2.CV_8U)
+
+    heatmap=np.repeat(heatmap,10,axis=0)
+    heatmap = np.repeat(heatmap, 10, axis=1)
+
+    heatmap=cv2.applyColorMap(heatmap, cv2.COLORMAP_WINTER)
+
+    cv2.imshow('', heatmap)
+    cv2.waitKey(0)
+    cv2.imwrite('/home/rislab/Workspace/pysot/rb_result/templates/'+ str(num) +'.jpg', heatmap)
 
 def dbscan_clustering(X,eps,min_samples):
     db = DBSCAN(eps=eps, min_samples=min_samples).fit(X)
