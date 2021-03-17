@@ -34,10 +34,9 @@ import cv2
 #
 #     return point_set,points
 
-def scoremap_sample_reject(score,n_samples):
-
-    score_size=int(np.sqrt(score.size/5))
-    respond = score.reshape(5, score_size, score_size).max(0)
+def scoremap_sample_reject(score_map,n_samples):
+    score_size=score_map.shape[0]
+    respond = score_map
 
     xy=np.random.rand(n_samples,2)*(score_size - 1)
     xy_cord=np.round(xy).astype(np.int32)
@@ -177,12 +176,13 @@ def plot_results(X, Y_, means, covariances, subplots,title):
     plt.yticks(())
     plt.title(title)
 
-def plot_results_cw(X, Y_, means, covariances, gmm_labels, center_label,subplots,title,center_mean):
+def plot_results_cw(X, Y_, means, covariances, gmm_labels, center_label,subplots,title,gms_mean):
     splot = plt.subplot(int(subplots.split(',')[0]), int(subplots.split(',')[1]), int(subplots.split(',')[2]))
     splot.cla()
     label=np.unique(gmm_labels)
 
-    plt.plot(center_mean[0],center_mean[1],'X',color='b')
+    for meancov in gms_mean:
+        plt.plot(meancov[0][0],meancov[1][1],'X',color='b')
 
     for j in range(len(label)):
         idx=np.where(gmm_labels==label[j])
