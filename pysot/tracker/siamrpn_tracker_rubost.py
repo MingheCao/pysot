@@ -11,7 +11,7 @@ from pysot.core.config import cfg
 from pysot.tracker.siamrpn_tracker import SiamRPNTracker
 
 import torch
-from pysot import rubost_track
+from tools.rubost_track import rubost_track
 
 import cv2
 
@@ -34,7 +34,11 @@ class SiamRPNRBTracker(SiamRPNTracker):
         self.zf_global = self.model.zf
         self.instance_sizes=[cfg.TRACK.INSTANCE_SIZE,cfg.TRACK.LOST_INSTANCE_SIZE]
 
+        self.thre_kldiv= 10
+        self.state_update = True
+
         self.visualize = True
+        self.CONFIDENCE_LOW=0.985
 
     def init_gm(self, img):
 
@@ -50,15 +54,17 @@ class SiamRPNRBTracker(SiamRPNTracker):
         outputs = self.model.track(x_crop)
         score = self._convert_score(outputs['cls'])
 
+        score_size=25
+        score_map=score.reshape(5, score_size, score_size).max(0)
+
         # cv2.imshow('.',x_crop.permute(2, 3, 1, 0).squeeze().cpu().detach().numpy().astype(np.uint8))
         # cv2.waitKey(0)
-        X = rubost_track.scoremap_sample_reject(score, 5000)
-        X[:, [1, 0]] = X[:, [0, 1]]
+        X = rubost_track.scoremap_sample_reject(score, 2000)
         self.gmm_gt = rubost_track.gmm_fit(X, 1)
 
         return {'instance_size': cfg.TRACK.INSTANCE_SIZE,
-                'score_size': 25,
-                'score': score,
+                'score_size': score_size,
+                'score_map': score_map,
                 'x_crop': x_crop.permute(2, 3, 1, 0).squeeze().cpu().detach().numpy().astype(np.uint8),
                 'best_score': 0
                 }
@@ -164,22 +170,40 @@ class SiamRPNRBTracker(SiamRPNTracker):
             weight=gmm.weights_[idx]
             weight/=weight.sum()
             mu=mu*weight.reshape(-1,1)
-            means[i,:]=mu.sum(axis=0)-score_sz/2
+            means[i,:]=mu.sum(axis=0)
 
         dist=means*means
         dist=dist.reshape(-1,2).sum(axis=1)
         center_label=label[np.argmin(dist)]
 
-        center_mean=X[gmm.predict(X)==center_label,:].mean(axis=0) -score_sz/2
+        return center_label
 
-        return center_label,center_mean
+    def cal_center_gmm_meancov(self,X,gmm,center_label,labels):
+
+        Y_=gmm.predict(X)
+        idx=np.where(labels==center_label)
+
+        center_points=np.empty((0,2), float)
+        for i , lb in enumerate(idx[0]):
+            center_points=np.vstack((center_points,X[Y_==lb,:]))
+
+        center_mean=center_points.mean(axis=0)
+        center_cov=np.cov(center_points.T)
+
+        # import matplotlib.pyplot as plt
+        # plt.figure()
+        # plt.scatter(center_points[:,0],center_points[:,1])
+        # plt.plot(center_mean[0], center_mean[1], 'X', color='b')
+        # plt.xlim(-12.5, 12.5)
+        # plt.ylim(-12.5, 12.5)
+
+        return center_mean,center_cov
 
 
     def kldiv_state(self, score,score_size):
 
         num_sample=2000
         X = rubost_track.scoremap_sample_reject(score, num_sample)
-        X[:, [1, 0]] = X[:, [0, 1]]
         # print(len(X))
         if len(X) <= int(num_sample/100):
             self.kldiv = 1000.
@@ -189,23 +213,29 @@ class SiamRPNRBTracker(SiamRPNTracker):
             self.state_sampling = True
 
         gmm = rubost_track.gmm_fit(X, 6)
-        labels = rubost_track.ChineseWhispers_gm(gmm, threhold = 1.5)
-        center_label,center_mean=self.get_center_gms(X,gmm,labels,score_size)
+        labels = rubost_track.ChineseWhispers_gm(gmm, threhold = 5,n_iter=5)
+        self.state_ngroups=len(np.unique(labels))
+        if self.state_ngroups <= 0:
+            raise ValueError("Groups must greater than 1.")
+
+        center_label=self.get_center_gms(X,gmm,labels,score_size)
+        center_mean,center_cov=self.cal_center_gmm_meancov(X,gmm,center_label,labels)
+        v, w = np.linalg.eigh(center_cov)
         self.center_mean=center_mean
+        self.std=np.sqrt(v[1])
+        # print(center_cov)
+        # print(self.std)
 
-        if self.visualize==True:
-            rubost_track.plot_results_cw(X, gmm.predict(X), gmm.means_, gmm.covariances_, labels, center_label,'1,2,2','Gaussian Mixture')
+        if self.visualize:
+            rubost_track.plot_results_cw(X, gmm.predict(X), gmm.means_, gmm.covariances_, labels, center_label, '1,2,2', 'Gaussian Mixture',center_mean)
 
-        kldiv = rubost_track.KLdiv_gmm_index(gmm, self.gmm_gt,np.where(labels==center_label))
+        kldiv = rubost_track.KLdiv_gmm_index(gmm, self.gmm_gt, np.where(labels == center_label))
         self.kldiv = kldiv
 
-        if kldiv < 1.5:
+        if kldiv < self.thre_kldiv:
             return True
         else:
             return False
-
-    def check_if_update(self, score, score_size):
-        pass
 
     def calc_penalty(self,pred_bbox,scale_z):
         def change(r):
@@ -253,7 +283,7 @@ class SiamRPNRBTracker(SiamRPNTracker):
             instance_size = cfg.TRACK.LOST_INSTANCE_SIZE
         else:
             instance_size = cfg.TRACK.INSTANCE_SIZE
-        
+
         w_z = self.size[0] + cfg.TRACK.CONTEXT_AMOUNT * np.sum(self.size)
         h_z = self.size[1] + cfg.TRACK.CONTEXT_AMOUNT * np.sum(self.size)
         s_z = np.sqrt(w_z * h_z)
@@ -270,40 +300,107 @@ class SiamRPNRBTracker(SiamRPNTracker):
         score = self._convert_score(outputs['cls'])
         pred_bbox = self._convert_bbox(outputs['loc'], anchors)
 
-        best_idx = np.argmax(score)
-        best_score=score[best_idx]
+        best_score=score[np.argmax(score)]
 
-        if best_score <= cfg.TRACK.CONFIDENCE_LOW:
+        index=np.argmax(score.reshape(5, -1),axis=0)
+        score_nms=score.reshape(5, -1)[index,np.arange(score_size*score_size)]
+        pred_bbox_nms=pred_bbox.reshape(4, 5, -1)[:, index, np.arange(score_size * score_size)]
+
+        if self.state_update ==True:
+            self.template_upate(self.zf_gt, 0.01)
+
+        if best_score <= self.CONFIDENCE_LOW:
             self.state_update = False
-            self.state_tracking = False
-            self.state_penalize = False
+            self.state_lost= True
 
-            cx = self.center_mean[1]/scale_z+self.center_pos[0]
-            cy = self.center_mean[0]/scale_z+self.center_pos[0]
+            scale_x = score_size / s_x
+            cx = self.center_mean[0] / scale_x + self.center_pos[0]
+            cy = self.center_mean[1] / scale_x + self.center_pos[1]
 
             # cx = self.center_pos[0]
-            # cy = self.center_pos[0]
-
+            # cy = self.center_pos[1]
             width = self.size[0]
             height = self.size[1]
         else:
-
             self.state_kldiv = self.kldiv_state(score,score_size)
+            if self.std <=2.2:
+                self.state_kldiv=True
+                self.kldiv=self.std
+            else:
+                self.state_kldiv=False
+                self.kldiv = self.std
 
-            penalty = self.calc_penalty(pred_bbox, scale_z)
-            pscore=self.penalize_score(score, penalty, score_size,True)
+            if self.state_ngroups==0:
+                if self.state_kldiv:
+                    self.state_update = True
 
-            best_idx = np.argmax(pscore)
-            best_score = score[best_idx]
-            bbox = pred_bbox[:, best_idx] / scale_z
+                    penalty = self.calc_penalty(pred_bbox, scale_z)
+                    pscore=self.penalize_score(score, penalty, score_size,True)
+                    best_idx = np.argmax(pscore)
+                    best_score = score[best_idx]
+                    bbox = pred_bbox[:, best_idx] / scale_z
+                    lr = penalty[best_idx] * score[best_idx] * cfg.TRACK.LR
+                    cx = bbox[0] + self.center_pos[0]
+                    cy = bbox[1] + self.center_pos[1]
+                    width = self.size[0] * (1 - lr) + bbox[2] * lr
+                    height = self.size[1] * (1 - lr) + bbox[3] * lr
+                else:
+                    self.state_update = False
 
-            lr = penalty[best_idx] * score[best_idx] * cfg.TRACK.LR
+                    if not self.state_sampling:
+                        cx = self.center_pos[0]
+                        cy = self.center_pos[1]
+                    else:
+                        cx = self.center_pos[0]
+                        cy = self.center_pos[1]
 
-            cx = bbox[0] + self.center_pos[0]
-            cy = bbox[1] + self.center_pos[1]
+                        # scale_x=score_size/s_x
+                        # cx = self.center_mean[0]/scale_x+self.center_pos[0]
+                        # cy = self.center_mean[1]/scale_x+self.center_pos[1]
 
-            width = self.size[0] * (1 - lr) + bbox[2] * lr
-            height = self.size[1] * (1 - lr) + bbox[3] * lr
+                    width = self.size[0]
+                    height = self.size[1]
+            else:
+                if self.state_kldiv:
+                    self.state_update = True
+
+                    penalty = self.calc_penalty(pred_bbox, scale_z)
+                    pscore = self.penalize_score(score, penalty, score_size, True)
+                    best_idx = np.argmax(pscore)
+                    best_score = score[best_idx]
+                    bbox = pred_bbox[:, best_idx] / scale_z
+                    lr = penalty[best_idx] * score[best_idx] * cfg.TRACK.LR
+                    cx = bbox[0] + self.center_pos[0]
+                    cy = bbox[1] + self.center_pos[1]
+                    width = self.size[0] * (1 - lr) + bbox[2] * lr
+                    height = self.size[1] * (1 - lr) + bbox[3] * lr
+                else:
+                    self.state_update = False
+
+                    if not self.state_sampling:
+                        cx = self.center_pos[0]
+                        cy = self.center_pos[1]
+                        width = self.size[0]
+                        height = self.size[1]
+                    else:
+
+                        # scale_x=score_size/s_x
+                        # cx = self.center_mean[0]/scale_x+self.center_pos[0]
+                        # cy = self.center_mean[1]/scale_x+self.center_pos[1]
+                        center_mean=self.center_mean+ score_size/2
+                        center_mean=center_mean.astype(int)
+
+                        penalty = self.calc_penalty(pred_bbox, scale_z)
+                        bbox=pred_bbox_nms.reshape(4,score_size,score_size)[:,center_mean[1],center_mean[0]]/ scale_z
+                        idx=center_mean[1]*score_size+center_mean[0]
+                        lr = penalty[idx] * score_nms[idx] * cfg.TRACK.LR
+                        cx = bbox[0] + +self.center_pos[0]
+                        cy = bbox[1] + self.center_pos[1]
+                        width = self.size[0] * (1 - lr) + bbox[2] * lr
+                        height = self.size[1] * (1 - lr) + bbox[3] * lr
+
+                        # cx = self.center_pos[0]
+                        # cy = self.center_pos[1]
 
 
         self.center_pos = np.array([cx, cy])
@@ -316,22 +413,17 @@ class SiamRPNRBTracker(SiamRPNTracker):
                 width,
                 height]
 
-        update_state=True
-        if update_state:
-            self.template_upate(self.template(img, bbox), 0.1)
-            self.template_upate(self.zf_gt, 0.05)
-            pass
-        else:
-            pass
+        if self.state_update:
+            self.template_upate(self.template(img, bbox), 0.05)
+
 
         return {
             'bbox': bbox,
             'best_score': best_score,
             'instance_size': instance_size,
-            'score_size': score_size,
-            'score': score,
             'x_crop': x_crop.permute(2, 3, 1, 0).squeeze().cpu().detach().numpy().astype(np.uint8),
             'kldiv': self.kldiv,
-            'update_state': update_state,
-            's_x':s_x
+            'update_state': self.state_update,
+            's_x':s_x,
+            'score_map':score_nms.reshape(score_size,score_size)
         }

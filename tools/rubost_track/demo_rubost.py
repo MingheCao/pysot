@@ -17,8 +17,7 @@ from pysot.tracker.tracker_builder import build_tracker
 
 import matplotlib.pyplot as plt
 
-
-from pysot import rubost_track
+from tools.rubost_track import rubost_track
 
 torch.set_num_threads(1)
 
@@ -74,8 +73,8 @@ def main():
     total_frames=len(glob(os.path.join(args.video_name, '*.jp*')))
     rects = np.zeros((total_frames, 4))
 
-    start_frame=270
-    pluse_frame=279
+    start_frame=1
+    pluse_frame=480
 
     for frame,img in get_frames(args.video_name):
         frame_num=img.split('/')[-1].split('.')[0]
@@ -95,21 +94,21 @@ def main():
 
             outputs=tracker.init_gm(frame)
 
-            rubost_track.visualize_response3d(outputs, fig, '1,2,1',frame_num)
+            rubost_track.visualize_response3d(outputs, fig, '1,2,1', frame_num)
         else:
             outputs = tracker.track(frame)
             rects[int(frame_num) - 1, :] = np.array(outputs['bbox'])
 
             # visualze_template(tracker.zf_global[2],int(frame_num))
 
-            rubost_track.visualize_response3d(outputs,fig,'1,2,1',frame_num)
-            frame_show=rubost_track.add_text_info(outputs,frame_num)
+            rubost_track.visualize_response3d(outputs, fig, '1,2,1', frame_num)
+            frame_show= rubost_track.add_text_info(outputs, frame_num)
 
             bbox = list(map(int, outputs['bbox']))
             cv2.rectangle(frame, (bbox[0], bbox[1]),
                               (bbox[0]+bbox[2], bbox[1]+bbox[3]),
                               (0, 255, 0), 3)
-            frame=rubost_track.plot_search_area(outputs,frame)
+            frame= rubost_track.plot_search_area(outputs, frame)
 
             cv2.imshow(video_name, frame)
             cv2.imshow('heatmap', frame_show)

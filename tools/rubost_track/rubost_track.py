@@ -1,4 +1,3 @@
-import random
 from sklearn.mixture import GaussianMixture
 import numpy as np
 
@@ -11,9 +10,8 @@ from matplotlib import cm
 from matplotlib.ticker import LinearLocator
 
 from sklearn.cluster import DBSCAN
-from sklearn import metrics
 
-from pysot.pycw import ChineseWhispers
+from tools.rubost_track.pycw import ChineseWhispers
 
 import cv2
 # def scoremap_sample(score):
@@ -49,6 +47,7 @@ def scoremap_sample_reject(score,n_samples):
     idx=np.where(z>s)
 
     sample_points=xy[idx]
+    sample_points[:,[0,1]]=sample_points[:,[1,0]] - score_size/2
 
     return sample_points
 
@@ -93,7 +92,7 @@ def KLdiv_gmm_index(gmm_p,gmm_q,index):
         'n_components':gmm_q.n_components
     }
 
-    kldiv=KLdiv_gmm(gmm1,gmm2)
+    kldiv=(KLdiv_gmm(gmm1,gmm2)+KLdiv_gmm(gmm2,gmm1))/2
     return kldiv
 
 # p = (mu1, Sigma1) = np.transpose(np.array([0.2, 0.1, 0.5, 0.4])), np.diag([0.14, 0.52, 0.2, 0.4])
@@ -126,7 +125,8 @@ def construct_adjacency_mat(gmm,threshold):
             cov_q = gmm.covariances_[j]
             w_q = gmm.weights_[j]
 
-            kldiv=KLdiv_gm_weighted((mu_p,cov_p),(mu_q,cov_q),w_p,w_q)
+            kldiv=(KLdiv_gm_weighted((mu_p,cov_p),(mu_q,cov_q),w_p,w_q) +
+                  KLdiv_gm_weighted((mu_q, cov_q), (mu_p, cov_p), w_q, w_p))/2
             distances_mat[i,j]=kldiv
 
     adjacency_mat = (1 / (distances_mat + np.identity(n_samples, dtype=np.float64))) * \
@@ -136,11 +136,11 @@ def construct_adjacency_mat(gmm,threshold):
     adjacency_mat[np.where(adjacency_mat <= 1 / threshold)] = 0.
     return adjacency_mat
 
-def ChineseWhispers_gm(gmm,threhold = 2):
+def ChineseWhispers_gm(gmm,threhold = 2,n_iter=3):
 
     adjacency_mat=construct_adjacency_mat(gmm,threhold)
 
-    cw = ChineseWhispers(n_iteration=3, metric='euclidean')
+    cw = ChineseWhispers(n_iteration=n_iter, metric='euclidean')
     predicted_labels = cw.fit_predict_gm(gmm.means_,adjacency_mat)
     return  predicted_labels
 
@@ -177,10 +177,12 @@ def plot_results(X, Y_, means, covariances, subplots,title):
     plt.yticks(())
     plt.title(title)
 
-def plot_results_cw(X, Y_, means, covariances, gmm_labels, center_label,subplots,title):
+def plot_results_cw(X, Y_, means, covariances, gmm_labels, center_label,subplots,title,center_mean):
     splot = plt.subplot(int(subplots.split(',')[0]), int(subplots.split(',')[1]), int(subplots.split(',')[2]))
     splot.cla()
     label=np.unique(gmm_labels)
+
+    plt.plot(center_mean[0],center_mean[1],'X',color='b')
 
     for j in range(len(label)):
         idx=np.where(gmm_labels==label[j])
@@ -211,17 +213,22 @@ def plot_results_cw(X, Y_, means, covariances, gmm_labels, center_label,subplots
             ell.set_alpha(0.5)
             splot.add_artist(ell)
 
-    plt.xlim(0., 25)
-    plt.ylim(25, 0)
-    plt.xticks(())
-    plt.yticks(())
-    plt.title(title)
+    plt.xlim(-12.5, 12.5)
+    plt.ylim(-12.5, 12.5)
+    # plt.xticks(())
+    # plt.yticks(())
+    # plt.title(title)
+    splot.xaxis.set_ticks_position('top')
+    splot.invert_yaxis()
+
 
 def visualize_response3d(outputs,fig,subplots,frame_num):
-    instance_size=outputs['instance_size']
-    score_size=outputs['score_size']
-    score = outputs['score']
-    respond = score.reshape(5, score_size, score_size).max(0)
+
+    score_map=outputs['score_map']
+    if score_map.shape[0] != score_map.shape[1]:
+        raise ValueError("width and height not equal.")
+    score_size=score_map.shape[0]
+
     X = np.arange(0, score_size, 1)
     Y = np.arange(score_size, 0, -1)
     X, Y = np.meshgrid(X, Y)
@@ -229,12 +236,15 @@ def visualize_response3d(outputs,fig,subplots,frame_num):
     ax1 = plt.subplot(int(subplots.split(',')[0]), int(subplots.split(',')[1]), int(subplots.split(',')[2]),projection='3d')
     # ax1 = plt.subplot(121, projection='3d')
     ax1.cla()
-    surf = ax1.plot_surface(X, Y, respond, cmap=cm.coolwarm, linewidth=0, antialiased=False)
+    surf = ax1.plot_surface(X, Y, score_map, cmap=cm.coolwarm, linewidth=0, antialiased=False)
     ax1.set_zlim(0.0, 1.0)
-    ax1.zaxis.set_major_locator(LinearLocator(5))
-    ax1.zaxis.set_major_formatter('{x:.01f}')
+    # ax1.xaxis.set_ticks_position('bottom')
+    # ax1.invert_yaxis()
+    # ax1.zaxis.set_major_locator(LinearLocator(5))
+    # ax1.zaxis.set_major_formatter('{x:.01f}')
     # fig.colorbar(surf, shrink=0.4, aspect=5)
 
+    # ax1.view_init(60, 90)
     plt.xticks([])
     plt.yticks([])
     ##
@@ -244,10 +254,13 @@ def visualize_response3d(outputs,fig,subplots,frame_num):
     plt.pause(0.1)
 
 def add_text_info(outputs,frame_num):
+    score_map=outputs['score_map']
+    if score_map.shape[0] != score_map.shape[1]:
+        raise ValueError("width and height not equal.")
+
     instance_size=outputs['instance_size']
-    score_size=outputs['score_size']
-    score = outputs['score']
-    respond = score.reshape(5, score_size, score_size).max(0)
+    # respond = score.reshape(5, score_size, score_size).max(0)
+    respond=score_map
 
     # add heatmap
     maxval = respond.max()
