@@ -176,22 +176,17 @@ def plot_results(X, Y_, means, covariances, subplots,title):
     plt.yticks(())
     plt.title(title)
 
-def plot_results_cw(X, Y_, means, covariances, gmm_labels, center_label,subplots,title,gms_mean):
+def plot_results_cw(X, Y_, seg_gmm,meancov,subplots,title):
     splot = plt.subplot(int(subplots.split(',')[0]), int(subplots.split(',')[1]), int(subplots.split(',')[2]))
     splot.cla()
-    label=np.unique(gmm_labels)
 
-    for meancov in gms_mean:
-        plt.plot(meancov[0][0],meancov[1][1],'X',color='b')
+    for i,(idx,_,mean,cov) in enumerate(seg_gmm):
 
-    for j in range(len(label)):
-        idx=np.where(gmm_labels==label[j])
-        means_=means[idx]
-        covariances_=covariances[idx]
-        if label[j]==center_label:
-            color='r'
-        else:
-            color=next(color_iter)
+        means_=mean
+        covariances_=cov
+        color=next(color_iter)
+
+        plt.plot(meancov[i][0][0], meancov[i][0][1], 'X', color=color)
 
         for i, (mean, covar,index) in enumerate(zip(
                 means_, covariances_,idx[0])):
@@ -220,7 +215,6 @@ def plot_results_cw(X, Y_, means, covariances, gmm_labels, center_label,subplots
     # plt.title(title)
     splot.xaxis.set_ticks_position('top')
     splot.invert_yaxis()
-
 
 def visualize_response3d(outputs,fig,subplots,frame_num):
 
@@ -253,13 +247,10 @@ def visualize_response3d(outputs,fig,subplots,frame_num):
 
     plt.pause(0.1)
 
-def add_text_info(outputs,frame_num):
-    score_map=outputs['score_map']
+def plot_xcrop_heated(x_crop,score_map, instance_size,frame_num,best_score,state_update,maxstd):
     if score_map.shape[0] != score_map.shape[1]:
         raise ValueError("width and height not equal.")
 
-    instance_size=outputs['instance_size']
-    # respond = score.reshape(5, score_size, score_size).max(0)
     respond=score_map
 
     # add heatmap
@@ -272,17 +263,17 @@ def add_text_info(outputs,frame_num):
                   cv2.CV_8U)
 
     # add texts
-    frame_show = cv2.addWeighted(outputs['x_crop'], 0.7, heatmap, 0.3, 0)
+    frame_show = cv2.addWeighted(x_crop, 0.7, heatmap, 0.3, 0)
     strshow = 'frame: ' + str(int(frame_num))
     frame_show = cv2.putText(frame_show, strshow, (15, 15), cv2.FONT_HERSHEY_SIMPLEX,
                              0.5, (0, 0, 255), 1, cv2.LINE_AA)
-    strshow = 'bestscore:' + str(outputs['best_score']).split('.')[0] + '.' + str(outputs['best_score']).split('.')[1][:3]
+    strshow = 'bestscore:' + str(best_score).split('.')[0] + '.' + str(best_score).split('.')[1][:3]
     frame_show = cv2.putText(frame_show, strshow, (110, 15), cv2.FONT_HERSHEY_SIMPLEX,
                              0.5, (0, 0, 255), 1, cv2.LINE_AA)
-    strshow= 'kldiv:' + str(outputs['kldiv']).split('.')[0] + '.' + str(outputs['kldiv']).split('.')[1][:3]
+    strshow= 'maxstd:' + str(maxstd).split('.')[0] + '.' + str(maxstd).split('.')[1][:3]
     frame_show = cv2.putText(frame_show, strshow, (15, 30), cv2.FONT_HERSHEY_SIMPLEX,
                              0.5, (0, 0, 255), 1, cv2.LINE_AA)
-    strshow='update:'+ str(outputs['update_state'])
+    strshow='update:'+ str(state_update)
     frame_show = cv2.putText(frame_show, strshow, (110, 30), cv2.FONT_HERSHEY_SIMPLEX,
                              0.5, (0, 0, 255), 1, cv2.LINE_AA)
 

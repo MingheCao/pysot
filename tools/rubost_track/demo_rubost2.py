@@ -62,9 +62,6 @@ def main():
     cv2.namedWindow(video_name, cv2.WND_PROP_FULLSCREEN)
     cv2.moveWindow(video_name, 200, 220)
 
-    cv2.namedWindow('heatmap', cv2.WND_PROP_FULLSCREEN)
-    cv2.moveWindow('heatmap', 650, 220)
-
     fig = plt.figure(figsize=(6, 2.5))
     plt.get_current_fig_manager().window.wm_geometry("+1100+220")
     # mng=plt.get_current_fig_manager()
@@ -74,7 +71,7 @@ def main():
     rects = np.zeros((total_frames, 4))
 
     start_frame=1
-    pluse_frame=480
+    pluse_frame=1
 
     for frame,img in get_frames(args.video_name):
         frame_num=img.split('/')[-1].split('.')[0]
@@ -97,17 +94,18 @@ def main():
             # for i in range(3):
             #     zf_cpu_gt.append(zf_gt[i].permute(2, 3, 1, 0).squeeze().cpu().detach().numpy())
 
-            outputs=tracker.init_gm(frame)
-
+            # outputs=tracker.init_gm(frame)
+            #
             # rubost_track.visualize_response3d(outputs, fig, '1,2,1', frame_num)
         else:
             outputs = tracker.track(frame)
+            tracker.frame_num= int(frame_num)
             rects[int(frame_num) - 1, :] = np.array(outputs['bbox'])
 
             # visualze_template(tracker.zf_global[2],int(frame_num))
 
-            # rubost_track.visualize_response3d(outputs, fig, '1,2,1', frame_num)
-            frame_show= rubost_track.add_text_info(outputs, frame_num)
+            rubost_track.visualize_response3d(outputs, fig, '1,2,1', frame_num)
+
 
             bbox = list(map(int, outputs['bbox']))
             # zf=tracker.template_raw(frame,bbox)
@@ -131,8 +129,13 @@ def main():
                               (0, 255, 0), 3)
             frame= rubost_track.plot_search_area(outputs, frame)
 
+            for bbox in outputs['proposal_bbox']:
+                bbox = list(map(int, bbox))
+                cv2.rectangle(frame, (bbox[0], bbox[1]),
+                              (bbox[0]+bbox[2], bbox[1]+bbox[3]),
+                              (255, 255, 0), 5)
+
             cv2.imshow(video_name, frame)
-            cv2.imshow('heatmap', frame_show)
             if int(frame_num) < pluse_frame:
                 cv2.waitKey(1)
 
