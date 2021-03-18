@@ -71,7 +71,7 @@ def main():
     rects = np.zeros((total_frames, 4))
 
     start_frame=1
-    pluse_frame=20
+    pluse_frame=6000
 
     for frame,img in get_frames(args.video_name):
         frame_num=img.split('/')[-1].split('.')[0]
@@ -103,11 +103,12 @@ def main():
                               (0, 255, 0), 3)
             frame= rubost_track.plot_search_area(outputs, frame)
 
-            for bbox in outputs['proposal_bbox']:
-                bbox = list(map(int, bbox))
-                cv2.rectangle(frame, (bbox[0], bbox[1]),
-                              (bbox[0]+bbox[2], bbox[1]+bbox[3]),
-                              (255, 255, 0), 5)
+            if 'proposal_bbox' in outputs:
+                for bbox in outputs['proposal_bbox']:
+                    bbox = list(map(int, bbox))
+                    cv2.rectangle(frame, (bbox[0], bbox[1]),
+                                  (bbox[0]+bbox[2], bbox[1]+bbox[3]),
+                                  (255, 255, 0), 5)
 
             cv2.imshow(video_name, frame)
             if int(frame_num) < pluse_frame:
