@@ -27,6 +27,11 @@ class SiamRPNRBTracker(SiamRPNTracker):
         self.visualize = True
         self.visualize_gmm = False
         self.CONFIDENCE_LOW = 0.985
+        self.instance_sizes = [cfg.TRACK.INSTANCE_SIZE, cfg.TRACK.LOST_INSTANCE_SIZE]
+
+        self.state_update = False
+        self.state_cross = False
+        self.state_lost = False
 
     def init(self, img, bbox):
         """
@@ -39,7 +44,14 @@ class SiamRPNRBTracker(SiamRPNTracker):
         self.model.template(z_crop)
         self.zf_gt = self.model.zf
         self.zf_global = self.model.zf
-        self.instance_sizes = [cfg.TRACK.INSTANCE_SIZE, cfg.TRACK.LOST_INSTANCE_SIZE]
+
+        z_patch = img[int(bbox[1]):int(bbox[1]+bbox[3]),
+                  int(bbox[0]):int(bbox[0]+bbox[2]),:]
+
+        z_patch=cv2.cvtColor(z_patch, cv2.COLOR_BGR2RGB)
+        hist = cv2.calcHist([z_patch], [0, 1, 2], None, [8, 8, 8],
+                            [0, 256, 0, 256, 0, 256])
+        self.hist_gt = cv2.normalize(hist, hist).flatten()
 
 
     def get_subwindow_init(self, im, pos, model_sz, original_sz, s_z, avg_chans):
@@ -224,11 +236,15 @@ class SiamRPNRBTracker(SiamRPNTracker):
         meancov, point_set = self.cal_gms_meancov(X, gmm, seg_gmm)
         repond_idx = self.get_respond_idx(score_map, point_set, seg_gmm)
 
-        for _, _, std in meancov[:2]:
-            if std > 2.0:
-                self.state_std = True
-            else:
-                self.state_std = False
+        mindist=float('inf')
+        for mean, _, std in meancov[:2]:
+            dist=mean*mean
+            dist=dist.sum()
+            if dist<mindist:
+                mindist=dist
+                self.center_std=std
+
+        self.state_std = True if self.center_std < 3.0 else False
 
         if self.visualize_gmm:
             center_label = labels[0]
@@ -275,8 +291,8 @@ class SiamRPNRBTracker(SiamRPNTracker):
         filtered_bbox=[]
         for bb in proposal_bbox:
             iou_score=rubost_track.cal_iou(to_lurd(pbbox),to_lurd(bb))
-            print('iou: %f' %(iou_score))
-            if iou_score <=0.76:
+            # print('iou: %f' %(iou_score))
+            if iou_score <=0.7:
                 cx, cy, width, height = self._bbox_clip(bb[0], bb[1], bb[2],
                                                         bb[3], img.shape[:2])
                 bbox = [cx - width / 2,
@@ -362,46 +378,57 @@ class SiamRPNRBTracker(SiamRPNTracker):
         score_map = score_nms.reshape(score_size, score_size)
 
         repond_idx = self.segment_groups(score_map)
-        pbbox, proposal_bbox = self.find_proposal_bbox(img, score_nms, pred_bbox_nms, repond_idx, score_size, scale_z)
-        filtered_ppbbox=self.merge_bbox(img,pbbox,proposal_bbox)
+        pbbox, proposal_bbox = self.find_proposal_bbox(img, score_nms, pred_bbox_nms, repond_idx, score_size,
+                                                       scale_z)
+        filtered_ppbbox = self.merge_bbox(img, pbbox, proposal_bbox)
 
-        self.center_pos = np.array([pbbox[0], pbbox[1]])
-        self.size = np.array([pbbox[2], pbbox[3]])
+        if self.state_update:
+            self.template_upate(self.zf_gt, 0.0126)
 
-        cx, cy, width, height = self._bbox_clip(pbbox[0], pbbox[1], pbbox[2],
-                                                pbbox[3], img.shape[:2])
-        bbox = [cx - width / 2,
-                cy - height / 2,
-                width,
-                height]
+        if self.state_lost:
+            pass
+        if self.state_cross:
+            pass
+
+        if best_score <= self.CONFIDENCE_LOW:
+            self.state_update = False
+            self.state_lost= True
+
+            cx = self.center_pos[0]
+            cy = self.center_pos[1]
+            width = self.size[0]
+            height = self.size[1]
+            self.center_pos = np.array([cx, cy])
+            self.size = np.array([width, height])
+
+            cx, cy, width, height = self._bbox_clip(cx, cy, width,
+                                                    height, img.shape[:2])
+            bbox = [cx - width / 2,
+                    cy - height / 2,
+                    width,
+                    height]
+
+        else:
+            self.center_pos = np.array([pbbox[0], pbbox[1]])
+            self.size = np.array([pbbox[2], pbbox[3]])
+
+            cx, cy, width, height = self._bbox_clip(pbbox[0], pbbox[1], pbbox[2],
+                                                    pbbox[3], img.shape[:2])
+            bbox = [cx - width / 2,
+                    cy - height / 2,
+                    width,
+                    height]
+
+            if self.state_std:
+                self.state_update = True
+            else:
+                self.state_update = False
+                self.state_cross=True
 
 
 
-        # if self.state_update ==True:
-        #     self.template_upate(self.zf_gt, 0.01)
-
-        # if best_score <= self.CONFIDENCE_LOW:
-        #     self.state_update = False
-        #     self.state_lost= True
-        # else:
-        #
-        #     if self.state_ngroups:
-        #         if self.state_std:
-        #             self.state_update = True
-        #
-        #         else:
-        #             self.state_update = False
-        #             self.state_occlusion=True
-        #
-        #     else:
-        #         pass
-
-
-
-
-
-        # if self.state_update:
-        #     self.template_upate(self.template(img, bbox), 0.06)
+        if self.state_update:
+            self.template_upate(self.template(img, bbox), 0.06)
 
         if self.visualize:
             cv2.namedWindow('Heated X_Crop', cv2.WND_PROP_FULLSCREEN)
@@ -409,7 +436,7 @@ class SiamRPNRBTracker(SiamRPNTracker):
             x_crop = x_crop.permute(2, 3, 1, 0).squeeze().cpu().detach().numpy().astype(np.uint8)
             frame_show = rubost_track.plot_xcrop_heated(x_crop, score_map, instance_size,
                                                         self.frame_num, best_score,
-                                                        self.state_update, 0.)
+                                                        self.state_update, self.center_std)
             cv2.imshow('Heated X_Crop', frame_show)
             cv2.waitKey(1)
 
@@ -419,3 +446,30 @@ class SiamRPNRBTracker(SiamRPNTracker):
             'score_map': score_map,
             'proposal_bbox': filtered_ppbbox
         }
+
+    def compare_hist(self,img,bbox,filtered_ppbbox):
+        patch1 = img[int(bbox[1]):int(bbox[1] + bbox[3]),
+                 int(bbox[0]):int(bbox[0] + bbox[2]), :]
+
+        patch1 = cv2.cvtColor(patch1, cv2.COLOR_BGR2RGB)
+        hist1 = cv2.calcHist([patch1], [0, 1, 2], None, [8, 8, 8],
+                             [0, 256, 0, 256, 0, 256])
+        hist1 = cv2.normalize(hist1, hist1).flatten()
+        hist_score1 = cv2.compareHist(self.hist_gt, hist1, cv2.HISTCMP_CORREL)
+
+        hist_score2 = []
+
+        for fbbox in filtered_ppbbox:
+            patch2 = img[int(fbbox[1]):int(fbbox[1] + fbbox[3]),
+                     int(fbbox[0]):int(fbbox[0] + fbbox[2]), :]
+            patch2 = cv2.cvtColor(patch2, cv2.COLOR_BGR2RGB)
+            hist2 = cv2.calcHist([patch2], [0, 1, 2], None, [8, 8, 8],
+                                 [0, 256, 0, 256, 0, 256])
+            hist2 = cv2.normalize(hist2, hist2).flatten()
+            hist_score = cv2.compareHist(self.hist_gt, hist2, cv2.HISTCMP_CORREL)
+            hist_score2.append(hist_score)
+
+        cv2.imshow('', patch2)
+        cv2.waitKey(1)
+
+        print('hist1: %f , hist2: %f' % (hist_score1, hist_score2))
