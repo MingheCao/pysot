@@ -71,7 +71,7 @@ def main():
     rects = np.zeros((total_frames, 4))
 
     start_frame=1
-    pluse_frame=1
+    pluse_frame=200
 
     for frame,img in get_frames(args.video_name):
         frame_num=img.split('/')[-1].split('.')[0]
@@ -89,40 +89,14 @@ def main():
             tracker.init(frame, init_rect)
             first_frame = False
 
-            # zf_gt = tracker.template_raw(frame, init_rect)
-            # zf_cpu_gt=[]
-            # for i in range(3):
-            #     zf_cpu_gt.append(zf_gt[i].permute(2, 3, 1, 0).squeeze().cpu().detach().numpy())
-
-            # outputs=tracker.init_gm(frame)
-            #
-            # rubost_track.visualize_response3d(outputs, fig, '1,2,1', frame_num)
         else:
             outputs = tracker.track(frame)
             tracker.frame_num= int(frame_num)
             rects[int(frame_num) - 1, :] = np.array(outputs['bbox'])
 
-            # visualze_template(tracker.zf_global[2],int(frame_num))
-
-            rubost_track.visualize_response3d(outputs, fig, '1,2,1', frame_num)
-
+            # rubost_track.visualize_response3d(outputs, fig, '1,2,1', frame_num)
 
             bbox = list(map(int, outputs['bbox']))
-            # zf=tracker.template_raw(frame,bbox)
-            #
-            # zf_cpu=[]
-            # for i in range(3):
-            #     zf_cpu.append(zf[i].permute(2, 3, 1, 0).squeeze().cpu().detach().numpy())
-            # zf_diff=[]
-            # for i in range(3):
-            #     zf_diff.append(zf_cpu[i]-zf_cpu_gt[i])
-            # zf_cov=[]
-            # for i in range(3):
-            #     zf_cov.append(np.var(zf_diff[i].flatten()))
-            #
-            # print(zf_cov)
-            # cv2.imshow('',z_bbox)
-            # cv2.waitKey(0)
 
             cv2.rectangle(frame, (bbox[0], bbox[1]),
                               (bbox[0]+bbox[2], bbox[1]+bbox[3]),

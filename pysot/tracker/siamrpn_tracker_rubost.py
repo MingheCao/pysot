@@ -21,11 +21,12 @@ class SiamRPNRBTracker(SiamRPNTracker):
         super(SiamRPNRBTracker, self).__init__(model)
         self.longterm_state = False
 
-        self.frame_num=0
+        self.frame_num = 0
         self.state_update = True
 
         self.visualize = True
-        self.CONFIDENCE_LOW=0.985
+        self.visualize_gmm = False
+        self.CONFIDENCE_LOW = 0.985
 
     def init(self, img, bbox):
         """
@@ -38,34 +39,8 @@ class SiamRPNRBTracker(SiamRPNTracker):
         self.model.template(z_crop)
         self.zf_gt = self.model.zf
         self.zf_global = self.model.zf
-        self.instance_sizes=[cfg.TRACK.INSTANCE_SIZE,cfg.TRACK.LOST_INSTANCE_SIZE]
+        self.instance_sizes = [cfg.TRACK.INSTANCE_SIZE, cfg.TRACK.LOST_INSTANCE_SIZE]
 
-        self.thre_kldiv= 10
-
-
-    def init_gm(self, img):
-
-        # instance_size = cfg.TRACK.INSTANCE_SIZE
-        # w_z = self.size[0] + cfg.TRACK.CONTEXT_AMOUNT * np.sum(self.size)
-        # h_z = self.size[1] + cfg.TRACK.CONTEXT_AMOUNT * np.sum(self.size)
-        # s_z = np.sqrt(w_z * h_z)
-        # s_x = s_z * (instance_size / cfg.TRACK.EXEMPLAR_SIZE)
-        #
-        # # expend z_crop to x_crop size
-        # x_crop = self.get_subwindow_init(img, self.center_pos, instance_size,
-        #                                  round(s_x), round(s_z), self.channel_average)
-        # outputs = self.model.track(x_crop)
-        # score = self._convert_score(outputs['cls'])
-        #
-        # score_size=25
-        # score_map=score.reshape(5, score_size, score_size).max(0)
-
-        # cv2.imshow('.',x_crop.permute(2, 3, 1, 0).squeeze().cpu().detach().numpy().astype(np.uint8))
-        # cv2.waitKey(0)
-        # X = rubost_track.scoremap_sample_reject(score_map, 2000)
-        # self.gmm_gt = rubost_track.gmm_fit(X, 1)
-
-        return { }
 
     def get_subwindow_init(self, im, pos, model_sz, original_sz, s_z, avg_chans):
 
@@ -161,53 +136,53 @@ class SiamRPNRBTracker(SiamRPNTracker):
 
         self.model.zf = self.zf_global
 
-    def sample_scoremap(self,score_map):
+    def sample_scoremap(self, score_map):
         num_sample = 2000
         X = rubost_track.scoremap_sample_reject(score_map, num_sample)
 
-        state_sampling=False if len(X) <= int(num_sample / 100) else True
-        return X,state_sampling
+        state_sampling = False if len(X) <= int(num_sample / 100) else True
+        return X, state_sampling
 
-    def get_seg_gmm(self,gmm,labels):
-        label=np.unique(labels)
+    def get_seg_gmm(self, gmm, labels):
+        label = np.unique(labels)
 
-        seg_gmm=[]
-        wt_sum=[]
+        seg_gmm = []
+        wt_sum = []
         for i, lb in enumerate(label):
             idx = np.where(labels == lb)
             mu = gmm.means_[idx]
             weight = gmm.weights_[idx]
-            cov=gmm.covariances_[idx]
+            cov = gmm.covariances_[idx]
 
-            seg_gmm.append((idx,weight,mu,cov))
+            seg_gmm.append((idx, weight, mu, cov))
             wt_sum.append(weight.sum())
 
-        wt_sum=np.array(wt_sum)
-        index=np.argsort(wt_sum)[::-1] #sort decent order
-        seg_gmm_sort=[]
+        wt_sum = np.array(wt_sum)
+        index = np.argsort(wt_sum)[::-1]  # sort decent order
+        seg_gmm_sort = []
         for idx in index:
             seg_gmm_sort.append(seg_gmm[idx])
 
         return seg_gmm_sort
 
-    def cal_gms_meancov(self,X,gmm,seg_gmm):
+    def cal_gms_meancov(self, X, gmm, seg_gmm):
 
-        Y_=gmm.predict(X)
+        Y_ = gmm.predict(X)
 
-        meancov=[]
-        point_set=[]
-        for idx,wt,mu,cov in seg_gmm:
-            points=np.empty((0,2), float)
+        meancov = []
+        point_set = []
+        for idx, wt, mu, cov in seg_gmm:
+            points = np.empty((0, 2), float)
             for lb in idx[0]:
-                points=np.vstack((points,X[Y_==lb,:]))
+                points = np.vstack((points, X[Y_ == lb, :]))
 
-            mean=points.mean(axis=0)
-            cov=np.cov(points.T)
+            mean = points.mean(axis=0)
+            cov = np.cov(points.T)
 
             v, w = np.linalg.eigh(cov)
             std = np.sqrt(v[1])
 
-            meancov.append((mean,cov,std))
+            meancov.append((mean, cov, std))
             point_set.append(points)
 
             # import matplotlib.pyplot as plt
@@ -217,61 +192,64 @@ class SiamRPNRBTracker(SiamRPNTracker):
             # plt.xlim(-12.5, 12.5)
             # plt.ylim(-12.5, 12.5)
 
-        return meancov,point_set
+        return meancov, point_set
 
-    def get_respond_idx(self,score_map,point_set,seg_gmm):
+    def get_respond_idx(self, score_map, point_set, seg_gmm):
         score_size = score_map.shape[0]
-        max_rep_idx=[]
+        max_rep_idx = []
         for i in range(len(point_set)):
             if i > 1:
                 break
-            wt_sum= seg_gmm[i][1].sum()
+            wt_sum = seg_gmm[i][1].sum()
             if wt_sum <= 0.3:
                 continue
 
-            points=point_set[i] + score_size / 2
-            points=np.round(points).astype(np.int32)
-            z=score_map[points[:,1],points[:,0]]
-            pt=points[z.argmax(),:]
-            max_rep_idx.append(np.array([pt[1],pt[0]]))
+            points = point_set[i] + score_size / 2
+            points = np.round(points).astype(np.int32)
+            z = score_map[points[:, 1], points[:, 0]]
+            pt = points[z.argmax(), :]
+            max_rep_idx.append(np.array([pt[1], pt[0]]))
 
         return max_rep_idx
 
-    def segment_groups(self,score_map):
-        X,self.state_sampling=self.sample_scoremap(score_map)
+    def segment_groups(self, score_map):
+        X, self.state_sampling = self.sample_scoremap(score_map)
         gmm = rubost_track.gmm_fit(X, 6)
         labels = rubost_track.ChineseWhispers_gm(gmm, threhold=5, n_iter=5)
         self.state_ngroups = len(np.unique(labels))
         if self.state_ngroups <= 0:
             raise ValueError("Groups must greater than 1.")
 
-        seg_gmm=self.get_seg_gmm(gmm,labels)
-        meancov,point_set=self.cal_gms_meancov(X,gmm,seg_gmm)
-        repond_idx=self.get_respond_idx(score_map,point_set,seg_gmm)
+        seg_gmm = self.get_seg_gmm(gmm, labels)
+        meancov, point_set = self.cal_gms_meancov(X, gmm, seg_gmm)
+        repond_idx = self.get_respond_idx(score_map, point_set, seg_gmm)
 
-        for _,_,std in meancov[:2]:
+        for _, _, std in meancov[:2]:
             if std > 2.0:
-                self.state_std=True
+                self.state_std = True
             else:
                 self.state_std = False
 
-        if self.visualize:
-            center_label=labels[0]
+        if self.visualize_gmm:
+            center_label = labels[0]
             rubost_track.plot_results_cw(X, gmm.predict(X), seg_gmm, meancov, '1,2,2', 'Gaussian Mixture')
 
         return repond_idx
 
-    def find_proposal_bbox(self,img,pred_bbox_nms,repond_idx,score_size,scale_z):
-        proposal_bbox = []
-        for idx in repond_idx:
-            ii=np.ravel_multi_index(idx, (score_size, score_size))
-            bb=pred_bbox_nms[:,ii] / scale_z
+    def find_proposal_bbox(self, img, score_nms,pred_bbox_nms, repond_idx, score_size, scale_z):
 
-            # bb = pred_bbox_nms[:, idx[0], idx[1]] / scale_z
+        penalty = self.calc_penalty(pred_bbox_nms, scale_z)
+
+        proposal_bbox = []
+        for cord in repond_idx:
+            idx = np.ravel_multi_index(cord, (score_size, score_size))
+            bb = pred_bbox_nms[:, idx] / scale_z
+
+            lr = penalty[idx] * score_nms[idx] * cfg.TRACK.LR
             cx = bb[0] + self.center_pos[0]
             cy = bb[1] + self.center_pos[1]
-            width = self.size[0] + bb[2]
-            height = self.size[1] + bb[3]
+            width = self.size[0] * (1 - lr) + bb[2] * lr
+            height = self.size[1] * (1 - lr) + bb[3] * lr
 
             cx, cy, width, height = self._bbox_clip(cx, cy, width,
                                                     height, img.shape[:2])
@@ -280,13 +258,18 @@ class SiamRPNRBTracker(SiamRPNTracker):
 
         return proposal_bbox
 
-    # def kldiv_state(self, score,score_size):
-    #
-    #     center_label=self.get_center_gms(X,gmm,labels,score_size)
-    #     center_mean,center_cov=self.cal_center_gmm_meancov(X,gmm,center_label,labels)
-    #     kldiv = rubost_track.KLdiv_gmm_index(gmm, self.gmm_gt, np.where(labels == center_label))
+    def score_nms(self,outputs,score_size,anchors):
+        score = self._convert_score(outputs['cls'])
+        pred_bbox = self._convert_bbox(outputs['loc'], anchors)
+        # best_score = score[np.argmax(score)]
 
-    def calc_penalty(self,pred_bbox,scale_z):
+        index = np.argmax(score.reshape(5, -1), axis=0)
+        score_nms = score.reshape(5, -1)[index, np.arange(score_size * score_size)]
+        pred_bbox_nms = pred_bbox.reshape(4, 5, -1)[:, index, np.arange(score_size * score_size)]
+
+        return score_nms,pred_bbox_nms
+
+    def calc_penalty(self, pred_bbox, scale_z):
         def change(r):
             return np.maximum(r, 1. / r)
 
@@ -303,13 +286,14 @@ class SiamRPNRBTracker(SiamRPNTracker):
         penalty = np.exp(-(r_c * s_c - 1) * cfg.TRACK.PENALTY_K)
         return penalty
 
-    def penalize_score(self,score,penalty,score_size,update_state):
+    def penalize_score(self, score, penalty, score_size, update_state):
 
         pscore = penalty * score
 
         hanning = np.hanning(score_size)
         window = np.outer(hanning, hanning)
-        window = np.tile(window.flatten(), self.anchor_num)
+        window=window.flatten()
+        # window = np.tile(window.flatten(), self.anchor_num)
 
         # window
         if update_state:
@@ -318,7 +302,6 @@ class SiamRPNRBTracker(SiamRPNTracker):
         else:
             pscore = pscore * (1 - 0.001) + window * 0.001
         return pscore
-
 
     def track(self, img):
         """
@@ -346,30 +329,32 @@ class SiamRPNRBTracker(SiamRPNTracker):
                                     round(s_x), self.channel_average)
 
         outputs = self.model.track(x_crop)
-        score = self._convert_score(outputs['cls'])
-        pred_bbox = self._convert_bbox(outputs['loc'], anchors)
-        best_score=score[np.argmax(score)]
-
-        index = np.argmax(score.reshape(5, -1), axis=0)
-        score_nms = score.reshape(5, -1)[index, np.arange(score_size * score_size)]
+        score_nms,pred_bbox_nms=self.score_nms(outputs,score_size,anchors)
         score_map = score_nms.reshape(score_size, score_size)
-        pred_bbox_nms = pred_bbox.reshape(4, 5, -1)[:, index, np.arange(score_size * score_size)]
 
-
-        penalty = self.calc_penalty(pred_bbox, scale_z)
-        pscore = self.penalize_score(score, penalty, score_size, True)
+        penalty = self.calc_penalty(pred_bbox_nms, scale_z)
+        pscore = self.penalize_score(score_nms, penalty, score_size, True)
         best_idx = np.argmax(pscore)
-        best_score = score[best_idx]
-        bbox = pred_bbox[:, best_idx] / scale_z
-        lr = penalty[best_idx] * score[best_idx] * cfg.TRACK.LR
+        best_score = score_nms[best_idx]
+        bbox = pred_bbox_nms[:, best_idx] / scale_z
+        lr = penalty[best_idx] * score_nms[best_idx] * cfg.TRACK.LR
         cx = bbox[0] + self.center_pos[0]
         cy = bbox[1] + self.center_pos[1]
         width = self.size[0] * (1 - lr) + bbox[2] * lr
         height = self.size[1] * (1 - lr) + bbox[3] * lr
 
-        proposal_bbox = []
+        self.center_pos = np.array([cx, cy])
+        self.size = np.array([width, height])
+
+        cx, cy, width, height = self._bbox_clip(cx, cy, width,
+                                                height, img.shape[:2])
+        bbox = [cx - width / 2,
+                cy - height / 2,
+                width,
+                height]
+
         repond_idx = self.segment_groups(score_map)
-        proposal_bbox = self.find_proposal_bbox(img, pred_bbox_nms, repond_idx, score_size,scale_z)
+        proposal_bbox = self.find_proposal_bbox(img, score_nms,pred_bbox_nms, repond_idx, score_size, scale_z)
 
         # if self.state_update ==True:
         #     self.template_upate(self.zf_gt, 0.01)
@@ -392,32 +377,24 @@ class SiamRPNRBTracker(SiamRPNTracker):
 
 
 
-        self.center_pos = np.array([cx, cy])
-        self.size = np.array([width, height])
 
-        cx, cy, width, height = self._bbox_clip(cx, cy, width,
-                                                height, img.shape[:2])
-        bbox = [cx - width / 2,
-                cy - height / 2,
-                width,
-                height]
 
-        if self.state_update:
-            self.template_upate(self.template(img, bbox), 0.06)
+        # if self.state_update:
+        #     self.template_upate(self.template(img, bbox), 0.06)
 
         if self.visualize:
             cv2.namedWindow('Heated X_Crop', cv2.WND_PROP_FULLSCREEN)
             cv2.moveWindow('Heated X_Crop', 650, 220)
-            x_crop=x_crop.permute(2, 3, 1, 0).squeeze().cpu().detach().numpy().astype(np.uint8)
-            frame_show = rubost_track.plot_xcrop_heated(x_crop,score_map, instance_size,
-                                                        self.frame_num,best_score,
-                                                        self.state_update,0.)
+            x_crop = x_crop.permute(2, 3, 1, 0).squeeze().cpu().detach().numpy().astype(np.uint8)
+            frame_show = rubost_track.plot_xcrop_heated(x_crop, score_map, instance_size,
+                                                        self.frame_num, best_score,
+                                                        self.state_update, 0.)
             cv2.imshow('Heated X_Crop', frame_show)
             cv2.waitKey(1)
 
         return {
             'bbox': bbox,
-            's_x':s_x,
-            'score_map':score_map,
-            'proposal_bbox':proposal_bbox
+            's_x': s_x,
+            'score_map': score_map,
+            'proposal_bbox': proposal_bbox
         }
