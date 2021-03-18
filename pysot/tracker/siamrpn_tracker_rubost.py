@@ -239,6 +239,17 @@ class SiamRPNRBTracker(SiamRPNTracker):
     def find_proposal_bbox(self, img, score_nms,pred_bbox_nms, repond_idx, score_size, scale_z):
 
         penalty = self.calc_penalty(pred_bbox_nms, scale_z)
+        pscore = self.penalize_score(score_nms, penalty, score_size, True)
+        best_idx = np.argmax(pscore)
+        best_score = score_nms[best_idx]
+        bbox = pred_bbox_nms[:, best_idx] / scale_z
+        lr = penalty[best_idx] * score_nms[best_idx] * cfg.TRACK.LR
+        cx = bbox[0] + self.center_pos[0]
+        cy = bbox[1] + self.center_pos[1]
+        width = self.size[0] * (1 - lr) + bbox[2] * lr
+        height = self.size[1] * (1 - lr) + bbox[3] * lr
+
+        pbbox=[cx,cy,width,height]
 
         proposal_bbox = []
         for cord in repond_idx:
@@ -251,12 +262,23 @@ class SiamRPNRBTracker(SiamRPNTracker):
             width = self.size[0] * (1 - lr) + bb[2] * lr
             height = self.size[1] * (1 - lr) + bb[3] * lr
 
-            cx, cy, width, height = self._bbox_clip(cx, cy, width,
-                                                    height, img.shape[:2])
+            proposal_bbox.append([cx , cy , width, height])
 
-            proposal_bbox.append([cx - width / 2, cy - height / 2, width, height])
+        return pbbox,proposal_bbox
 
-        return proposal_bbox
+    def merge_bbox(self,pbbox,proposal_bbox):
+
+        def to_lurd(box):
+            return [box[0] - box[2] / 2,box[1] - box[3] / 2,
+                    box[0] + box[2] / 2,box[1] + box[3] / 2]
+
+        filtered_bbox=[]
+        for bb in proposal_bbox:
+            iou_score=rubost_track.cal_iou(to_lurd(pbbox),to_lurd(bb))
+            if iou_score <=0.9:
+                filtered_bbox.append(bb)
+
+        return filtered_bbox
 
     def score_nms(self,outputs,score_size,anchors):
         score = self._convert_score(outputs['cls'])
@@ -332,16 +354,9 @@ class SiamRPNRBTracker(SiamRPNTracker):
         score_nms,pred_bbox_nms=self.score_nms(outputs,score_size,anchors)
         score_map = score_nms.reshape(score_size, score_size)
 
-        penalty = self.calc_penalty(pred_bbox_nms, scale_z)
-        pscore = self.penalize_score(score_nms, penalty, score_size, True)
-        best_idx = np.argmax(pscore)
-        best_score = score_nms[best_idx]
-        bbox = pred_bbox_nms[:, best_idx] / scale_z
-        lr = penalty[best_idx] * score_nms[best_idx] * cfg.TRACK.LR
-        cx = bbox[0] + self.center_pos[0]
-        cy = bbox[1] + self.center_pos[1]
-        width = self.size[0] * (1 - lr) + bbox[2] * lr
-        height = self.size[1] * (1 - lr) + bbox[3] * lr
+        repond_idx = self.segment_groups(score_map)
+        pbbox, proposal_bbox = self.find_proposal_bbox(img, score_nms, pred_bbox_nms, repond_idx, score_size, scale_z)
+        filtered_pbbox=self.merge_bbox(pbbox,proposal_bbox)
 
         self.center_pos = np.array([cx, cy])
         self.size = np.array([width, height])
@@ -353,8 +368,7 @@ class SiamRPNRBTracker(SiamRPNTracker):
                 width,
                 height]
 
-        repond_idx = self.segment_groups(score_map)
-        proposal_bbox = self.find_proposal_bbox(img, score_nms,pred_bbox_nms, repond_idx, score_size, scale_z)
+
 
         # if self.state_update ==True:
         #     self.template_upate(self.zf_gt, 0.01)
