@@ -266,7 +266,7 @@ class SiamRPNRBTracker(SiamRPNTracker):
 
         return pbbox,proposal_bbox
 
-    def merge_bbox(self,pbbox,proposal_bbox):
+    def merge_bbox(self,img,pbbox,proposal_bbox):
 
         def to_lurd(box):
             return [box[0] - box[2] / 2,box[1] - box[3] / 2,
@@ -275,21 +275,28 @@ class SiamRPNRBTracker(SiamRPNTracker):
         filtered_bbox=[]
         for bb in proposal_bbox:
             iou_score=rubost_track.cal_iou(to_lurd(pbbox),to_lurd(bb))
-            if iou_score <=0.9:
-                filtered_bbox.append(bb)
+            print('iou: %f' %(iou_score))
+            if iou_score <=0.76:
+                cx, cy, width, height = self._bbox_clip(bb[0], bb[1], bb[2],
+                                                        bb[3], img.shape[:2])
+                bbox = [cx - width / 2,
+                        cy - height / 2,
+                        width,
+                        height]
+                filtered_bbox.append(bbox)
 
         return filtered_bbox
 
     def score_nms(self,outputs,score_size,anchors):
         score = self._convert_score(outputs['cls'])
         pred_bbox = self._convert_bbox(outputs['loc'], anchors)
-        # best_score = score[np.argmax(score)]
+        best_score = score[np.argmax(score)]
 
         index = np.argmax(score.reshape(5, -1), axis=0)
         score_nms = score.reshape(5, -1)[index, np.arange(score_size * score_size)]
         pred_bbox_nms = pred_bbox.reshape(4, 5, -1)[:, index, np.arange(score_size * score_size)]
 
-        return score_nms,pred_bbox_nms
+        return score_nms,pred_bbox_nms,best_score
 
     def calc_penalty(self, pred_bbox, scale_z):
         def change(r):
@@ -351,18 +358,18 @@ class SiamRPNRBTracker(SiamRPNTracker):
                                     round(s_x), self.channel_average)
 
         outputs = self.model.track(x_crop)
-        score_nms,pred_bbox_nms=self.score_nms(outputs,score_size,anchors)
+        score_nms,pred_bbox_nms,best_score=self.score_nms(outputs,score_size,anchors)
         score_map = score_nms.reshape(score_size, score_size)
 
         repond_idx = self.segment_groups(score_map)
         pbbox, proposal_bbox = self.find_proposal_bbox(img, score_nms, pred_bbox_nms, repond_idx, score_size, scale_z)
-        filtered_pbbox=self.merge_bbox(pbbox,proposal_bbox)
+        filtered_ppbbox=self.merge_bbox(img,pbbox,proposal_bbox)
 
-        self.center_pos = np.array([cx, cy])
-        self.size = np.array([width, height])
+        self.center_pos = np.array([pbbox[0], pbbox[1]])
+        self.size = np.array([pbbox[2], pbbox[3]])
 
-        cx, cy, width, height = self._bbox_clip(cx, cy, width,
-                                                height, img.shape[:2])
+        cx, cy, width, height = self._bbox_clip(pbbox[0], pbbox[1], pbbox[2],
+                                                pbbox[3], img.shape[:2])
         bbox = [cx - width / 2,
                 cy - height / 2,
                 width,
@@ -410,5 +417,5 @@ class SiamRPNRBTracker(SiamRPNTracker):
             'bbox': bbox,
             's_x': s_x,
             'score_map': score_map,
-            'proposal_bbox': proposal_bbox
+            'proposal_bbox': filtered_ppbbox
         }
