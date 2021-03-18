@@ -219,30 +219,16 @@ class SiamRPNRBTracker(SiamRPNTracker):
 
         return meancov,point_set
 
-    # def cal_center_gms(self,X,gmm,labels,score_sz):
-    #     label=np.unique(labels)
-    #     means=np.zeros((len(label),2))
-    #
-    #     for i, lb in enumerate(label):
-    #         idx=np.where(labels==lb)
-    #         mu=gmm.means_[idx]
-    #         weight=gmm.weights_[idx]
-    #         weight/=weight.sum()
-    #         mu=mu*weight.reshape(-1,1)
-    #         means[i,:]=mu.sum(axis=0)
-    #
-    #     dist=means*means
-    #     dist=dist.reshape(-1,2).sum(axis=1)
-    #     center_label=label[np.argmin(dist)]
-    #
-    #     return center_label
-
-    def get_respond_idx(self,score_map,point_set):
+    def get_respond_idx(self,score_map,point_set,seg_gmm):
         score_size = score_map.shape[0]
         max_rep_idx=[]
         for i in range(len(point_set)):
             if i > 1:
                 break
+            wt_sum= seg_gmm[i][1].sum()
+            if wt_sum <= 0.3:
+                continue
+
             points=point_set[i] + score_size / 2
             points=np.round(points).astype(np.int32)
             z=score_map[points[:,1],points[:,0]]
@@ -261,7 +247,7 @@ class SiamRPNRBTracker(SiamRPNTracker):
 
         seg_gmm=self.get_seg_gmm(gmm,labels)
         meancov,point_set=self.cal_gms_meancov(X,gmm,seg_gmm)
-        repond_idx=self.get_respond_idx(score_map,point_set)
+        repond_idx=self.get_respond_idx(score_map,point_set,seg_gmm)
 
         for _,_,std in meancov[:2]:
             if std > 2.0:
@@ -275,10 +261,13 @@ class SiamRPNRBTracker(SiamRPNTracker):
 
         return repond_idx
 
-    def find_proposal_bbox(self,img,pred_bbox_nms,repond_idx,scale_z):
+    def find_proposal_bbox(self,img,pred_bbox_nms,repond_idx,score_size,scale_z):
         proposal_bbox = []
         for idx in repond_idx:
-            bb = pred_bbox_nms[:, idx[0], idx[1]] / scale_z
+            ii=np.ravel_multi_index(idx, (score_size, score_size))
+            bb=pred_bbox_nms[:,ii] / scale_z
+
+            # bb = pred_bbox_nms[:, idx[0], idx[1]] / scale_z
             cx = bb[0] + self.center_pos[0]
             cy = bb[1] + self.center_pos[1]
             width = self.size[0] + bb[2]
@@ -365,7 +354,7 @@ class SiamRPNRBTracker(SiamRPNTracker):
         score_nms = score.reshape(5, -1)[index, np.arange(score_size * score_size)]
         score_map = score_nms.reshape(score_size, score_size)
         pred_bbox_nms = pred_bbox.reshape(4, 5, -1)[:, index, np.arange(score_size * score_size)]
-        pred_bbox_nms = pred_bbox_nms.reshape(4, score_size, score_size)
+
 
         penalty = self.calc_penalty(pred_bbox, scale_z)
         pscore = self.penalize_score(score, penalty, score_size, True)
@@ -380,74 +369,27 @@ class SiamRPNRBTracker(SiamRPNTracker):
 
         proposal_bbox = []
         repond_idx = self.segment_groups(score_map)
-        proposal_bbox = self.find_proposal_bbox(img, pred_bbox_nms, repond_idx, scale_z)
+        proposal_bbox = self.find_proposal_bbox(img, pred_bbox_nms, repond_idx, score_size,scale_z)
 
         # if self.state_update ==True:
         #     self.template_upate(self.zf_gt, 0.01)
 
-        if best_score <= self.CONFIDENCE_LOW:
-            self.state_update = False
-            self.state_lost= True
+        # if best_score <= self.CONFIDENCE_LOW:
+        #     self.state_update = False
+        #     self.state_lost= True
+        # else:
+        #
+        #     if self.state_ngroups:
+        #         if self.state_std:
+        #             self.state_update = True
+        #
+        #         else:
+        #             self.state_update = False
+        #             self.state_occlusion=True
+        #
+        #     else:
+        #         pass
 
-
-
-
-
-        else:
-
-
-
-            if self.state_ngroups:
-                if self.state_std:
-                    self.state_update = True
-
-                    penalty = self.calc_penalty(pred_bbox, scale_z)
-                    pscore=self.penalize_score(score, penalty, score_size,True)
-                    best_idx = np.argmax(pscore)
-                    best_score = score[best_idx]
-                    bbox = pred_bbox[:, best_idx] / scale_z
-                    lr = penalty[best_idx] * score[best_idx] * cfg.TRACK.LR
-                    cx = bbox[0] + self.center_pos[0]
-                    cy = bbox[1] + self.center_pos[1]
-                    width = self.size[0] * (1 - lr) + bbox[2] * lr
-                    height = self.size[1] * (1 - lr) + bbox[3] * lr
-                else:
-                    self.state_update = False
-                    self.state_occlusion=True
-
-                    penalty = self.calc_penalty(pred_bbox, scale_z)
-                    pscore=self.penalize_score(score, penalty, score_size,True)
-                    best_idx = np.argmax(pscore)
-                    best_score = score[best_idx]
-                    bbox = pred_bbox[:, best_idx] / scale_z
-                    lr = penalty[best_idx] * score[best_idx] * cfg.TRACK.LR
-                    cx = bbox[0] + self.center_pos[0]
-                    cy = bbox[1] + self.center_pos[1]
-                    width = self.size[0] * (1 - lr) + bbox[2] * lr
-                    height = self.size[1] * (1 - lr) + bbox[3] * lr
-
-            else:
-                pass
-                # if self.state_kldiv:
-                # else:
-                #
-                #         # scale_x=score_size/s_x
-                #         # cx = self.center_mean[0]/scale_x+self.center_pos[0]
-                #         # cy = self.center_mean[1]/scale_x+self.center_pos[1]
-                #         center_mean=self.center_mean+ score_size/2
-                #         center_mean=center_mean.astype(int)
-                #
-                #         penalty = self.calc_penalty(pred_bbox, scale_z)
-                #         bbox=pred_bbox_nms.reshape(4,score_size,score_size)[:,center_mean[1],center_mean[0]]/ scale_z
-                #         idx=center_mean[1]*score_size+center_mean[0]
-                #         lr = penalty[idx] * score_nms[idx] * cfg.TRACK.LR
-                #         cx = bbox[0] + +self.center_pos[0]
-                #         cy = bbox[1] + self.center_pos[1]
-                #         width = self.size[0] * (1 - lr) + bbox[2] * lr
-                #         height = self.size[1] * (1 - lr) + bbox[3] * lr
-                #
-                #         # cx = self.center_pos[0]
-                #         # cy = self.center_pos[1]
 
 
         self.center_pos = np.array([cx, cy])
