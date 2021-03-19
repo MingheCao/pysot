@@ -71,7 +71,7 @@ def main():
     rects = np.zeros((total_frames, 4))
 
     start_frame=1
-    pluse_frame=6000
+    pluse_frame=1000
 
     for frame,img in get_frames(args.video_name):
         frame_num=img.split('/')[-1].split('.')[0]

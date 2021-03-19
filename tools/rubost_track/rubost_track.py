@@ -288,12 +288,6 @@ def plot_xcrop_heated(x_crop,score_map, instance_size,frame_num,best_score,state
     strshow = 'bestscore:' + str(best_score).split('.')[0] + '.' + str(best_score).split('.')[1][:3]
     frame_show = cv2.putText(frame_show, strshow, (110, 15), cv2.FONT_HERSHEY_SIMPLEX,
                              0.5, (0, 0, 255), 1, cv2.LINE_AA)
-    strshow= 'std:' + str(maxstd).split('.')[0] + '.' + str(maxstd).split('.')[1][:3]
-    frame_show = cv2.putText(frame_show, strshow, (15, 30), cv2.FONT_HERSHEY_SIMPLEX,
-                             0.5, (0, 0, 255), 1, cv2.LINE_AA)
-    strshow='update:'+ str(state_update)
-    frame_show = cv2.putText(frame_show, strshow, (110, 30), cv2.FONT_HERSHEY_SIMPLEX,
-                             0.5, (0, 0, 255), 1, cv2.LINE_AA)
 
     return frame_show
 

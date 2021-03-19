@@ -12,6 +12,7 @@ from pysot.tracker.siamrpn_tracker import SiamRPNTracker
 
 import torch
 from tools.rubost_track import rubost_track
+from tools.rubost_track import image_similarity
 
 import cv2
 
@@ -33,6 +34,11 @@ class SiamRPNRBTracker(SiamRPNTracker):
         self.state_cross = False
         self.state_lost = False
 
+        self.center_std_thre=2.5
+        self.cross_count = 0
+
+        self.img_similar=image_similarity.ImageSimilarity()
+
     def init(self, img, bbox):
         """
         args:
@@ -45,13 +51,8 @@ class SiamRPNRBTracker(SiamRPNTracker):
         self.zf_gt = self.model.zf
         self.zf_global = self.model.zf
 
-        z_patch = img[int(bbox[1]):int(bbox[1]+bbox[3]),
-                  int(bbox[0]):int(bbox[0]+bbox[2]),:]
-
-        z_patch=cv2.cvtColor(z_patch, cv2.COLOR_BGR2RGB)
-        hist = cv2.calcHist([z_patch], [0, 1, 2], None, [8, 8, 8],
-                            [0, 256, 0, 256, 0, 256])
-        self.hist_gt = cv2.normalize(hist, hist).flatten()
+        self.zf_bbox_global=self.img_similar.get_feature(
+            self.crop_bbox(img,bbox))
 
 
     def get_subwindow_init(self, im, pos, model_sz, original_sz, s_z, avg_chans):
@@ -248,7 +249,7 @@ class SiamRPNRBTracker(SiamRPNTracker):
                 mindist=dist
                 self.center_std=std
 
-        self.state_std = True if self.center_std < 2.5 else False
+        self.state_std = True if self.center_std < self.center_std_thre else False
 
         if self.visualize_gmm:
             center_label = labels[0]
@@ -384,6 +385,16 @@ class SiamRPNRBTracker(SiamRPNTracker):
         score_nms,pred_bbox_nms,best_score=self.score_nms(outputs,score_size,anchors)
         score_map = score_nms.reshape(score_size, score_size)
 
+        if self.visualize:
+            cv2.namedWindow('Heated X_Crop', cv2.WND_PROP_FULLSCREEN)
+            cv2.moveWindow('Heated X_Crop', 650, 220)
+            x_crop = x_crop.permute(2, 3, 1, 0).squeeze().cpu().detach().numpy().astype(np.uint8)
+            frame_show = rubost_track.plot_xcrop_heated(x_crop, score_map, instance_size,
+                                                        self.frame_num, best_score,
+                                                        0, 0)
+            cv2.imshow('Heated X_Crop', frame_show)
+            cv2.waitKey(1)
+
         penalty, pbbox = self.find_pbbox(score_nms,pred_bbox_nms,score_size,scale_z)
         repond_idx = self.segment_groups(score_map)
         if not self.state_sampling:
@@ -411,10 +422,31 @@ class SiamRPNRBTracker(SiamRPNTracker):
             # compare hist with proposals
             pass
         if self.state_cross:
+            self.cross_count+=1
+            if self.cross_count < 5 :
+                self.center_pos = np.array([pbbox[0], pbbox[1]])
+                self.size = np.array([pbbox[2], pbbox[3]])
+
+                cx, cy, width, height = self._bbox_clip(pbbox[0], pbbox[1], pbbox[2],
+                                                        pbbox[3], img.shape[:2])
+                bbox = [cx - width / 2,
+                        cy - height / 2,
+                        width,
+                        height]
+
+                return {
+                    'bbox': bbox,
+                    's_x': s_x,
+                    'score_map': score_map,
+                    'proposal_bbox': filtered_ppbbox
+                }
+
+
             if len(filtered_ppbbox):
-                hist_score1,hist_score2 = self.compare_hist(img,pbbox,filtered_ppbbox)
+                hist_score1,hist_score2 = self.similar_compare_deep(img,pbbox,filtered_ppbbox)
                 hist_score=hist_score1/np.array(hist_score2)
-                if any(hist_score < 1.0):
+                print(hist_score)
+                if any(hist_score < 0.9):
                     idx=np.argmin(hist_score)
                     bbox=filtered_ppbbox[idx]
 
@@ -433,6 +465,9 @@ class SiamRPNRBTracker(SiamRPNTracker):
                             width,
                             height]
                     self.state_cross = False
+
+                self.cross_count = 0
+
             else:
                 self.center_pos = np.array([pbbox[0], pbbox[1]])
                 self.size = np.array([pbbox[2], pbbox[3]])
@@ -443,6 +478,7 @@ class SiamRPNRBTracker(SiamRPNTracker):
                         cy - height / 2,
                         width,
                         height]
+
 
             return {
                 'bbox': bbox,
@@ -484,6 +520,9 @@ class SiamRPNRBTracker(SiamRPNTracker):
         if self.state_std:
             if not len(filtered_ppbbox):
                 self.state_update = True
+
+            self.last_patch = img[int(bbox[1]):int(bbox[1] + bbox[3]),
+                     int(bbox[0]):int(bbox[0] + bbox[2]), :]
         else:
             self.state_update = False
             self.state_cross=True
@@ -492,14 +531,18 @@ class SiamRPNRBTracker(SiamRPNTracker):
 
         if self.state_update:
             self.template_upate(self.template(img, bbox), 0.0126)
+            self.zf_bbox_global=self.feature_mix(self.zf_bbox_global,
+                                                 self.img_similar.get_feature(self.crop_bbox(img,bbox)),
+                                                 0.0126)
 
         if self.visualize:
-            cv2.namedWindow('Heated X_Crop', cv2.WND_PROP_FULLSCREEN)
-            cv2.moveWindow('Heated X_Crop', 650, 220)
-            x_crop = x_crop.permute(2, 3, 1, 0).squeeze().cpu().detach().numpy().astype(np.uint8)
-            frame_show = rubost_track.plot_xcrop_heated(x_crop, score_map, instance_size,
-                                                        self.frame_num, best_score,
-                                                        self.state_update, self.center_std)
+            strshow = 'std:' + str(self.center_std).split('.')[0] + '.' + str(self.center_std).split('.')[1][:3]
+            frame_show = cv2.putText(frame_show, strshow, (15, 30), cv2.FONT_HERSHEY_SIMPLEX,
+                                     0.5, (0, 0, 255), 1, cv2.LINE_AA)
+            strshow = 'update:' + str(self.state_update)
+            frame_show = cv2.putText(frame_show, strshow, (110, 30), cv2.FONT_HERSHEY_SIMPLEX,
+                                     0.5, (0, 0, 255), 1, cv2.LINE_AA)
+
             cv2.imshow('Heated X_Crop', frame_show)
             cv2.waitKey(1)
 
@@ -523,6 +566,8 @@ class SiamRPNRBTracker(SiamRPNTracker):
         hist_score2 = []
 
         for fbbox in filtered_ppbbox:
+            fbbox=np.array(fbbox)
+            fbbox[np.where(fbbox < 0 )]=0
             patch2 = img[int(fbbox[1]):int(fbbox[1] + fbbox[3]),
                      int(fbbox[0]):int(fbbox[0] + fbbox[2]), :]
             patch2 = cv2.cvtColor(patch2, cv2.COLOR_BGR2RGB)
@@ -536,3 +581,30 @@ class SiamRPNRBTracker(SiamRPNTracker):
         # cv2.waitKey(1)
 
         return hist_score1,hist_score2
+
+    def similar_compare_deep(self,img,bbox,filtered_ppbbox):
+        score1 = self.img_similar.similarity_score(self.zf_bbox_global,
+                                                   self.img_similar.get_feature(
+                                                       self.crop_bbox(img,bbox)))
+
+        score2 = []
+        for fbbox in filtered_ppbbox:
+            fbbox=np.array(fbbox)
+            fbbox[np.where(fbbox < 0 )]=0
+            patch2 = self.crop_bbox(img,fbbox)
+            score = self.img_similar.cal_similarity_score(self.zf_bbox_global,
+                                                          self.img_similar.get_feature(
+                                                              self.crop_bbox(img, fbbox)))
+            score2.append(score)
+
+        # cv2.imshow('', patch2)
+        # cv2.waitKey(1)
+
+        return score1,score2
+
+    def crop_bbox(self,img,bbox):
+        return img[int(bbox[1]):int(bbox[1] + bbox[3]),
+                 int(bbox[0]):int(bbox[0] + bbox[2]), :]
+
+    def feature_mix(self,feature1,feature2,wt):
+        return feature1*(1-wt) + feature2*wt
