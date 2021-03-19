@@ -36,6 +36,7 @@ class SiamRPNRBTracker(SiamRPNTracker):
 
         self.center_std_thre=2.5
         self.cross_count = 0
+        self.cross_count2=0
 
         self.img_similar=image_similarity.ImageSimilarity()
 
@@ -423,7 +424,12 @@ class SiamRPNRBTracker(SiamRPNTracker):
             pass
         if self.state_cross:
             self.cross_count+=1
-            if self.cross_count < 5 :
+
+            if self.cross_count2 >=6:
+                self.state_cross=False
+                self.cross_count2=0
+
+            if self.cross_count < 3 :
                 self.center_pos = np.array([pbbox[0], pbbox[1]])
                 self.size = np.array([pbbox[2], pbbox[3]])
 
@@ -446,7 +452,7 @@ class SiamRPNRBTracker(SiamRPNTracker):
                 hist_score1,hist_score2 = self.similar_compare_deep(img,pbbox,filtered_ppbbox)
                 hist_score=hist_score1/np.array(hist_score2)
                 print(hist_score)
-                if any(hist_score < 0.9):
+                if any(hist_score < 0.7):
                     idx=np.argmin(hist_score)
                     bbox=filtered_ppbbox[idx]
 
@@ -478,6 +484,8 @@ class SiamRPNRBTracker(SiamRPNTracker):
                         cy - height / 2,
                         width,
                         height]
+
+                self.cross_count2+=1
 
 
             return {
@@ -531,9 +539,9 @@ class SiamRPNRBTracker(SiamRPNTracker):
 
         if self.state_update:
             self.template_upate(self.template(img, bbox), 0.0126)
-            self.zf_bbox_global=self.feature_mix(self.zf_bbox_global,
-                                                 self.img_similar.get_feature(self.crop_bbox(img,bbox)),
-                                                 0.0126)
+            # self.zf_bbox_global=self.feature_mix(self.zf_bbox_global,
+            #                                      self.img_similar.get_feature(self.crop_bbox(img,bbox)),
+            #                                      0.0126)
 
         if self.visualize:
             strshow = 'std:' + str(self.center_std).split('.')[0] + '.' + str(self.center_std).split('.')[1][:3]

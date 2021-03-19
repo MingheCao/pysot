@@ -15,7 +15,7 @@ import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 import cv2
 
-from tensorflow.python.keras.applications.mobilenet import MobileNet, preprocess_input
+from tensorflow.keras.applications.resnet50 import ResNet50, preprocess_input
 from tensorflow.python.keras.preprocessing import image as process_image
 from tensorflow.keras.utils import Sequence
 from tensorflow.python.keras.layers import GlobalAveragePooling2D
@@ -36,7 +36,7 @@ class ImageSimilarity():
         Returns:
             Class of keras model with weights.
         '''
-        base_model = MobileNet(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+        base_model = ResNet50(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
         output = base_model.layers[output_layer].output
         output = GlobalAveragePooling2D()(output)
         model = Model(inputs=base_model.input, outputs=output)
