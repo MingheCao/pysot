@@ -38,7 +38,7 @@ ANCHOR:
     ANCHOR_NUM: 5
 
 TRACK:
-    TYPE: 'SiamMaskTracker'
+    TYPE: 'SiamRPNRBTracker'
     PENALTY_K: 0.10
     WINDOW_INFLUENCE: 0.41
     LR: 0.32

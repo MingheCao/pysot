@@ -12,10 +12,9 @@ from pysot.tracker.siamrpn_tracker import SiamRPNTracker
 
 import torch
 from tools.rubost_track import rubost_track
-from tools.rubost_track import image_similarity
+from tools.rubost_track import imageSimilarity_deeprank
 
 import cv2
-
 
 class SiamRPNRBTracker(SiamRPNTracker):
     def __init__(self, model):
@@ -34,11 +33,12 @@ class SiamRPNRBTracker(SiamRPNTracker):
         self.state_cross = False
         self.state_lost = False
 
-        self.center_std_thre=2.5
+        self.center_std_thre=2.3
+        self.similar_thre = 1.2
         self.cross_count = 0
         self.cross_count2=0
 
-        self.img_similar=image_similarity.ImageSimilarity()
+        self.img_similar=imageSimilarity_deeprank.imageSimilarity_deeprank()
 
     def init(self, img, bbox):
         """
@@ -54,7 +54,6 @@ class SiamRPNRBTracker(SiamRPNTracker):
 
         self.zf_bbox_global=self.img_similar.get_feature(
             self.crop_bbox(img,bbox))
-
 
     def get_subwindow_init(self, im, pos, model_sz, original_sz, s_z, avg_chans):
 
@@ -141,6 +140,12 @@ class SiamRPNRBTracker(SiamRPNTracker):
         z_crop = self.get_z_crop(img, bbox)
         return self.model.template_rb_raw(z_crop)
 
+    def img_tensor2cpu(self,img):
+        return img.permute(2, 3, 1, 0).squeeze().cpu().detach().numpy().astype(np.uint8)
+
+    def bbox_cwh2xywh(self,bbox):
+        return [bbox[0] - bbox[2]/2, bbox[1] - bbox[3]/2,bbox[2],bbox[3]]
+
     @torch.no_grad()
     def template_upate(self, zf, weight):
         if weight > 1 or weight < 0:
@@ -186,15 +191,22 @@ class SiamRPNRBTracker(SiamRPNTracker):
         meancov = []
         point_set = []
         for idx, wt, mu, cov in seg_gmm:
+            wt_sum = wt.sum()
+            if wt_sum <= 0.1:
+                continue
+
             points = np.empty((0, 2), float)
             for lb in idx[0]:
                 points = np.vstack((points, X[Y_ == lb, :]))
 
             mean = points.mean(axis=0)
-            cov = np.cov(points.T)
-
-            v, w = np.linalg.eigh(cov)
-            std = np.sqrt(v[1])
+            if not len(points) ==1:
+                cov = np.cov(points.T)
+                v, w = np.linalg.eigh(cov)
+                std = np.sqrt(v[1])
+            else:
+                cov = np.zeros((2,2))
+                std= 0
 
             meancov.append((mean, cov, std))
             point_set.append(points)
@@ -208,15 +220,12 @@ class SiamRPNRBTracker(SiamRPNTracker):
 
         return meancov, point_set
 
-    def get_respond_idx(self, score_map, point_set, seg_gmm):
+    def get_respond_idx(self, score_map, point_set):
         score_size = score_map.shape[0]
         max_rep_idx = []
         for i in range(len(point_set)):
-            if i > 1:
+            if i > 2:
                 break
-            wt_sum = seg_gmm[i][1].sum()
-            if wt_sum <= 0.3:
-                continue
 
             points = point_set[i] + score_size / 2
             points = np.round(points).astype(np.int32)
@@ -240,14 +249,11 @@ class SiamRPNRBTracker(SiamRPNTracker):
 
         seg_gmm = self.get_seg_gmm(gmm, labels)
         meancov, point_set = self.cal_gms_meancov(X, gmm, seg_gmm)
-        repond_idx = self.get_respond_idx(score_map, point_set, seg_gmm)
+        repond_idx = self.get_respond_idx(score_map, point_set)
 
-        mindist=float('inf')
-        for mean, _, std in meancov[:2]:
-            dist=mean*mean
-            dist=dist.sum()
-            if dist<mindist:
-                mindist=dist
+        minstd=float('-inf')
+        for _, _, std in meancov[:2]:
+            if std>minstd:
                 self.center_std=std
 
         self.state_std = True if self.center_std < self.center_std_thre else False
@@ -301,15 +307,10 @@ class SiamRPNRBTracker(SiamRPNTracker):
         for bb in proposal_bbox:
             iou_score=rubost_track.cal_iou(to_lurd(pbbox),to_lurd(bb))
             # print('iou: %f' %(iou_score))
-            if iou_score <=0.7:
+            if iou_score <=0.76:
                 cx, cy, width, height = self._bbox_clip(bb[0], bb[1], bb[2],
                                                         bb[3], img.shape[:2])
-                bbox = [cx - width / 2,
-                        cy - height / 2,
-                        width,
-                        height]
-                filtered_bbox.append(bbox)
-
+                filtered_bbox.append([cx - width/2,cy - height/2,width,height])
         return filtered_bbox
 
     def score_nms(self,outputs,score_size,anchors):
@@ -350,12 +351,26 @@ class SiamRPNRBTracker(SiamRPNTracker):
         # window = np.tile(window.flatten(), self.anchor_num)
 
         # window
-        if update_state:
-            pscore = pscore * (1 - cfg.TRACK.WINDOW_INFLUENCE) + \
+        pscore = pscore * (1 - cfg.TRACK.WINDOW_INFLUENCE) + \
                      window * cfg.TRACK.WINDOW_INFLUENCE
-        else:
-            pscore = pscore * (1 - 0.001) + window * 0.001
+
         return pscore
+
+    def get_similar_state(self,img,pbbox,filtered_ppbbox):
+        hist_score1, hist_score2 = self.similar_compare_deep(img, pbbox, filtered_ppbbox)
+        hist_score = hist_score1 / np.array(hist_score2)
+        print('----------')
+        print(hist_score1)
+        print(hist_score2)
+        print('----------')
+        # print(hist_score)
+
+        idx = np.argmax(hist_score)
+        bbox = filtered_ppbbox[idx]
+
+        similar_state= False if any(hist_score > self.similar_thre) else True
+
+        return similar_state,bbox
 
     def track(self, img):
         """
@@ -387,14 +402,7 @@ class SiamRPNRBTracker(SiamRPNTracker):
         score_map = score_nms.reshape(score_size, score_size)
 
         if self.visualize:
-            cv2.namedWindow('Heated X_Crop', cv2.WND_PROP_FULLSCREEN)
-            cv2.moveWindow('Heated X_Crop', 650, 220)
-            x_crop = x_crop.permute(2, 3, 1, 0).squeeze().cpu().detach().numpy().astype(np.uint8)
-            frame_show = rubost_track.plot_xcrop_heated(x_crop, score_map, instance_size,
-                                                        self.frame_num, best_score,
-                                                        0, 0)
-            cv2.imshow('Heated X_Crop', frame_show)
-            cv2.waitKey(1)
+            frame = rubost_track.visualize_tracking_heated(self.img_tensor2cpu(x_crop),score_map, instance_size,self.frame_num, best_score)
 
         penalty, pbbox = self.find_pbbox(score_nms,pred_bbox_nms,score_size,scale_z)
         repond_idx = self.segment_groups(score_map)
@@ -417,7 +425,7 @@ class SiamRPNRBTracker(SiamRPNTracker):
         filtered_ppbbox = self.merge_bbox(img, pbbox, proposal_bbox)
 
         if self.state_update:
-            self.template_upate(self.zf_gt, 0.0126)
+            self.template_upate(self.zf_gt, 0.126)
 
         if self.state_lost:
             # compare hist with proposals
@@ -449,13 +457,10 @@ class SiamRPNRBTracker(SiamRPNTracker):
 
 
             if len(filtered_ppbbox):
-                hist_score1,hist_score2 = self.similar_compare_deep(img,pbbox,filtered_ppbbox)
-                hist_score=hist_score1/np.array(hist_score2)
-                print(hist_score)
-                if any(hist_score < 0.7):
-                    idx=np.argmin(hist_score)
-                    bbox=filtered_ppbbox[idx]
 
+                similar_state,bbox = self.get_similar_state(img, self.bbox_cwh2xywh(pbbox), filtered_ppbbox)
+
+                if not similar_state:
                     self.center_pos = np.array([bbox[0], bbox[1]])
                     self.size = np.array([bbox[2], bbox[3]])
 
@@ -535,24 +540,14 @@ class SiamRPNRBTracker(SiamRPNTracker):
             self.state_update = False
             self.state_cross=True
 
-
-
         if self.state_update:
-            self.template_upate(self.template(img, bbox), 0.0126)
+            self.template_upate(self.template(img, bbox), 0.226)
             # self.zf_bbox_global=self.feature_mix(self.zf_bbox_global,
             #                                      self.img_similar.get_feature(self.crop_bbox(img,bbox)),
-            #                                      0.0126)
+            #                                      0.126)
 
         if self.visualize:
-            strshow = 'std:' + str(self.center_std).split('.')[0] + '.' + str(self.center_std).split('.')[1][:3]
-            frame_show = cv2.putText(frame_show, strshow, (15, 30), cv2.FONT_HERSHEY_SIMPLEX,
-                                     0.5, (0, 0, 255), 1, cv2.LINE_AA)
-            strshow = 'update:' + str(self.state_update)
-            frame_show = cv2.putText(frame_show, strshow, (110, 30), cv2.FONT_HERSHEY_SIMPLEX,
-                                     0.5, (0, 0, 255), 1, cv2.LINE_AA)
-
-            cv2.imshow('Heated X_Crop', frame_show)
-            cv2.waitKey(1)
+            rubost_track.put_text_update_std(frame,self.center_std,self.state_update)
 
         return {
             'bbox': bbox,
@@ -561,58 +556,53 @@ class SiamRPNRBTracker(SiamRPNTracker):
             'proposal_bbox': filtered_ppbbox
         }
 
-    def compare_hist(self,img,bbox,filtered_ppbbox):
-        patch1 = img[int(bbox[1]):int(bbox[1] + bbox[3]),
-                 int(bbox[0]):int(bbox[0] + bbox[2]), :]
-
-        patch1 = cv2.cvtColor(patch1, cv2.COLOR_BGR2RGB)
-        hist1 = cv2.calcHist([patch1], [0, 1, 2], None, [8, 8, 8],
-                             [0, 256, 0, 256, 0, 256])
-        hist1 = cv2.normalize(hist1, hist1).flatten()
-        hist_score1 = cv2.compareHist(self.hist_gt, hist1, cv2.HISTCMP_CORREL)
-
-        hist_score2 = []
-
-        for fbbox in filtered_ppbbox:
-            fbbox=np.array(fbbox)
-            fbbox[np.where(fbbox < 0 )]=0
-            patch2 = img[int(fbbox[1]):int(fbbox[1] + fbbox[3]),
-                     int(fbbox[0]):int(fbbox[0] + fbbox[2]), :]
-            patch2 = cv2.cvtColor(patch2, cv2.COLOR_BGR2RGB)
-            hist2 = cv2.calcHist([patch2], [0, 1, 2], None, [8, 8, 8],
-                                 [0, 256, 0, 256, 0, 256])
-            hist2 = cv2.normalize(hist2, hist2).flatten()
-            hist_score = cv2.compareHist(self.hist_gt, hist2, cv2.HISTCMP_CORREL)
-            hist_score2.append(hist_score)
-
-        # cv2.imshow('', patch2)
-        # cv2.waitKey(1)
-
-        return hist_score1,hist_score2
-
     def similar_compare_deep(self,img,bbox,filtered_ppbbox):
         score1 = self.img_similar.similarity_score(self.zf_bbox_global,
                                                    self.img_similar.get_feature(
                                                        self.crop_bbox(img,bbox)))
+        if self.visualize:
+            cv2.imshow('1', self.crop_bbox(img, bbox))
+            cv2.waitKey(1)
 
         score2 = []
         for fbbox in filtered_ppbbox:
             fbbox=np.array(fbbox)
             fbbox[np.where(fbbox < 0 )]=0
-            patch2 = self.crop_bbox(img,fbbox)
-            score = self.img_similar.cal_similarity_score(self.zf_bbox_global,
+            score = self.img_similar.similarity_score(self.zf_bbox_global,
                                                           self.img_similar.get_feature(
                                                               self.crop_bbox(img, fbbox)))
             score2.append(score)
 
-        # cv2.imshow('', patch2)
-        # cv2.waitKey(1)
+            if self.visualize:
+                cv2.imshow('2', self.crop_bbox(img, fbbox))
+                cv2.waitKey(1)
 
         return score1,score2
 
     def crop_bbox(self,img,bbox):
         return img[int(bbox[1]):int(bbox[1] + bbox[3]),
                  int(bbox[0]):int(bbox[0] + bbox[2]), :]
+
+    # def crop_bbox(self,img,bbox):
+    #     # bbox: (x, y, w, h) bbox
+    #     center_pos = np.array([bbox[0] + (bbox[2] - 1) / 2,
+    #                                 bbox[1] + (bbox[3] - 1) / 2])
+    #     size = np.array([bbox[2], bbox[3]])
+    #
+    #     # calculate z crop size
+    #     w_z = size[0] + cfg.TRACK.CONTEXT_AMOUNT * np.sum(size)
+    #     h_z = size[1] + cfg.TRACK.CONTEXT_AMOUNT * np.sum(size)
+    #     s_z = round(np.sqrt(w_z * h_z))
+    #
+    #     # calculate channle average
+    #     channel_average = np.mean(img, axis=(0, 1))
+    #
+    #     # get crop
+    #     img_crop = self.get_subwindow(img, center_pos,
+    #                                 cfg.TRACK.EXEMPLAR_SIZE,
+    #                                 s_z, channel_average)
+    #
+    #     return img_crop.permute(2, 3, 1, 0).squeeze().cpu().detach().numpy().astype(np.uint8)
 
     def feature_mix(self,feature1,feature2,wt):
         return feature1*(1-wt) + feature2*wt

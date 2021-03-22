@@ -204,7 +204,7 @@ def plot_results_cw(X, Y_, seg_gmm,meancov,subplots,title):
         covariances_=cov
         color=next(color_iter)
 
-        plt.plot(meancov[i][0][0], meancov[i][0][1], 'X', color=color)
+        # plt.plot(meancov[i][0][0], meancov[i][0][1], 'X', color=color)
 
         for i, (mean, covar,index) in enumerate(zip(
                 means_, covariances_,idx[0])):
@@ -265,7 +265,16 @@ def visualize_response3d(outputs,fig,subplots,frame_num):
 
     plt.pause(0.1)
 
-def plot_xcrop_heated(x_crop,score_map, instance_size,frame_num,best_score,state_update,maxstd):
+def visualize_tracking_heated(img,score_map,instance_size,frame_num,best_score):
+    cv2.namedWindow('Heated', cv2.WND_PROP_FULLSCREEN)
+    cv2.moveWindow('Heated', 650, 220)
+    frame_show = plot_xcrop_heated(img, score_map, instance_size,
+                                                frame_num, best_score)
+    cv2.imshow('Heated', frame_show)
+    cv2.waitKey(1)
+    return frame_show
+
+def plot_xcrop_heated(x_crop,score_map, instance_size,frame_num,best_score):
     if score_map.shape[0] != score_map.shape[1]:
         raise ValueError("width and height not equal.")
 
@@ -282,14 +291,25 @@ def plot_xcrop_heated(x_crop,score_map, instance_size,frame_num,best_score,state
 
     # add texts
     frame_show = cv2.addWeighted(x_crop, 0.7, heatmap, 0.3, 0)
-    strshow = 'frame: ' + str(int(frame_num))
+    strshow = '#: ' + str(int(frame_num))
     frame_show = cv2.putText(frame_show, strshow, (15, 15), cv2.FONT_HERSHEY_SIMPLEX,
-                             0.5, (0, 0, 255), 1, cv2.LINE_AA)
+                             0.5, (0, 255, 255), 1, cv2.LINE_AA)
     strshow = 'bestscore:' + str(best_score).split('.')[0] + '.' + str(best_score).split('.')[1][:3]
     frame_show = cv2.putText(frame_show, strshow, (110, 15), cv2.FONT_HERSHEY_SIMPLEX,
-                             0.5, (0, 0, 255), 1, cv2.LINE_AA)
+                             0.5, (0, 255, 255), 1, cv2.LINE_AA)
 
     return frame_show
+
+def put_text_update_std(frame,std,update_state):
+    strshow = 'std:' + str(std).split('.')[0] + '.' + str(std).split('.')[1][:3]
+    frame= cv2.putText(frame, strshow, (15, 30), cv2.FONT_HERSHEY_SIMPLEX,
+                             0.5, (0, 255, 255), 1, cv2.LINE_AA)
+    strshow = 'update:' + str(update_state)
+    frame = cv2.putText(frame, strshow, (110, 30), cv2.FONT_HERSHEY_SIMPLEX,
+                             0.5, (0, 255, 255), 1, cv2.LINE_AA)
+
+    cv2.imshow('Heated', frame)
+    cv2.waitKey(1)
 
 def plot_search_area(outputs,frame):
     rect_length = outputs['s_x']

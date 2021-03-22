@@ -15,13 +15,13 @@ import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 import cv2
 
-from tensorflow.keras.applications.resnet50 import ResNet50, preprocess_input
+from tensorflow.keras.applications.mobilenet_v2 import MobileNetV2, preprocess_input
 from tensorflow.python.keras.preprocessing import image as process_image
 from tensorflow.keras.utils import Sequence
 from tensorflow.python.keras.layers import GlobalAveragePooling2D
 from tensorflow.python.keras import Model
 
-class ImageSimilarity():
+class imageSimilarity_direct():
     '''Image similarity.'''
     def __init__(self):
         self._model = self._define_model()
@@ -36,7 +36,7 @@ class ImageSimilarity():
         Returns:
             Class of keras model with weights.
         '''
-        base_model = ResNet50(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+        base_model = MobileNetV2(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
         output = base_model.layers[output_layer].output
         output = GlobalAveragePooling2D()(output)
         model = Model(inputs=base_model.input, outputs=output)
@@ -61,7 +61,7 @@ class ImageSimilarity():
                         np.linalg.norm(input2.T, axis=0, keepdims=True))
 
 
-    def preprocess_image(self,img):
+    def preprocess_cvimage(self,img):
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img=cv2.resize(img,(224, 224))
         x = np.expand_dims(img, axis=0)
@@ -81,13 +81,13 @@ class ImageSimilarity():
         return distances
 
     def get_feature(self,cv_img):
-        img=self.preprocess_image(cv_img)
+        img=self.preprocess_cvimage(cv_img)
         feature = self.extract_feature(img)
         return feature
 
     def cal_similarity_score(self,cv_img1,cv_img2):
-        img1=self.preprocess_image(cv_img1)
-        img2=self.preprocess_image(cv_img2)
+        img1=self.preprocess_cvimage(cv_img1)
+        img2=self.preprocess_cvimage(cv_img2)
 
         features1=self.extract_feature(img1)
         features2 = self.extract_feature(img2)
@@ -98,7 +98,7 @@ class ImageSimilarity():
 
 
 if __name__ == '__main__':
-    similarity = ImageSimilarity()
+    similarity = imageSimilarity_direct()
 
     img1=cv2.imread('/home/rislab/Workspace/image-similarity/demo/1.jpg')
     img2=cv2.imread('/home/rislab/Workspace/image-similarity/demo/2.jpg')
