@@ -188,11 +188,17 @@ def plot_results(X, Y_, means, covariances, subplots,title):
         ell.set_alpha(0.5)
         splot.add_artist(ell)
 
-    plt.xlim(0., 25)
-    plt.ylim(25, 0)
+    plt.xlim(-12.5, 12.5)
+    plt.ylim(-12.5, 12.5)
     plt.xticks(())
     plt.yticks(())
-    plt.title(title)
+    splot.xaxis.set_ticks_position('top')
+    splot.invert_yaxis()
+    # plt.title(title)
+
+    # plt.savefig('/home/rislab/Workspace/pysot/rb_result/figure2/gmm' +title+ '.png', dpi=300,
+    #             bbox_inches='tight')
+    plt.pause(0.1)
 
 def plot_results_cw(X, Y_, seg_gmm,meancov,subplots,title):
     splot = plt.subplot(int(subplots.split(',')[0]), int(subplots.split(',')[1]), int(subplots.split(',')[2]))
@@ -228,11 +234,15 @@ def plot_results_cw(X, Y_, seg_gmm,meancov,subplots,title):
 
     plt.xlim(-12.5, 12.5)
     plt.ylim(-12.5, 12.5)
-    # plt.xticks(())
-    # plt.yticks(())
+    plt.xticks(())
+    plt.yticks(())
     # plt.title(title)
     splot.xaxis.set_ticks_position('top')
     splot.invert_yaxis()
+
+    # plt.savefig('/home/rislab/Workspace/pysot/rb_result/figure2/cw' +title + '.png', dpi=300,
+    #             bbox_inches='tight')
+    plt.pause(0.1)
 
 def visualize_response3d(outputs,fig,subplots,frame_num):
 
@@ -261,8 +271,7 @@ def visualize_response3d(outputs,fig,subplots,frame_num):
     plt.yticks([])
     ##
 
-    # plt.savefig('/home/rislab/Workspace/pysot/rb_result/templates/respond_3d.png', dpi=300, bbox_inches='tight')
-
+    # plt.savefig('/home/rislab/Workspace/pysot/rb_result/figure2/respond_3d'+frame_num+'.png', dpi=300, bbox_inches='tight')
     plt.pause(0.1)
 
 def visualize_tracking_heated(img,score_map,instance_size,frame_num,best_score):
@@ -291,13 +300,13 @@ def plot_xcrop_heated(x_crop,score_map, instance_size,frame_num,best_score):
 
     # add texts
     frame_show = cv2.addWeighted(x_crop, 0.7, heatmap, 0.3, 0)
-    strshow = '#: ' + str(int(frame_num))
+    strshow = '# ' + str(int(frame_num))
     frame_show = cv2.putText(frame_show, strshow, (15, 15), cv2.FONT_HERSHEY_SIMPLEX,
-                             0.5, (0, 255, 255), 1, cv2.LINE_AA)
-    strshow = 'bestscore:' + str(best_score).split('.')[0] + '.' + str(best_score).split('.')[1][:3]
-    frame_show = cv2.putText(frame_show, strshow, (110, 15), cv2.FONT_HERSHEY_SIMPLEX,
-                             0.5, (0, 255, 255), 1, cv2.LINE_AA)
-
+                             0.6, (0, 255, 255), 1, cv2.LINE_AA)
+    # strshow = 'bestscore:' + str(best_score).split('.')[0] + '.' + str(best_score).split('.')[1][:3]
+    # frame_show = cv2.putText(frame_show, strshow, (110, 15), cv2.FONT_HERSHEY_SIMPLEX,
+                             # 0.5, (0, 255, 255), 1, cv2.LINE_AA)
+    # cv2.imwrite('/home/rislab/Workspace/pysot/rb_result/figure2/'+str(int(frame_num)) +'.jpg',frame_show)
     return frame_show
 
 def put_text_update_std(frame,std,update_state):

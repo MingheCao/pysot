@@ -261,7 +261,7 @@ class SiamRPNRBTracker(SiamRPNTracker):
 
         if self.visualize_gmm:
             center_label = labels[0]
-            rubost_track.plot_results_cw(X, gmm.predict(X), seg_gmm, meancov, '1,2,2', 'Gaussian Mixture')
+            rubost_track.plot_results_cw(X, gmm.predict(X), seg_gmm, meancov, '1,2,2', str(self.frame_num))
 
         return repond_idx
 

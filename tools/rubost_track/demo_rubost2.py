@@ -67,13 +67,13 @@ def main():
     total_frames=len(glob(os.path.join(args.video_name, '*.jp*')))
     rects = np.zeros((total_frames, 4))
 
-    with open('/'.join(args.video_name.split('/')[:-1]) + '/UGV.json') as f:
-        json_info = json.load(f)
+    # with open('/'.join(args.video_name.split('/')[:-1]) + '/UGV.json') as f:
+    #     json_info = json.load(f)
     first_frame = True
 
 
-    start_frame=1
-    pluse_frame=10
+    start_frame=150
+    pluse_frame=188
 
     for frame,img in get_frames(args.video_name):
         frame_num=img.split('/')[-1].split('.')[0]
@@ -83,8 +83,8 @@ def main():
         if first_frame:
             try:
                 init_rect = cv2.selectROI(video_name, frame, False, False)
-                gt_rects = np.loadtxt(args.video_name.replace('img', 'groundtruth_rect.txt'), delimiter=',',
-                                      dtype='int')
+                # gt_rects = np.loadtxt(args.video_name.replace('img', 'groundtruth_rect.txt'), delimiter=',',
+                #                       dtype='int')
                 # init_rect = gt_rects[int(frame_num), :]
                 # init_rect = json_info[video_name]['init_rect']
             except:
