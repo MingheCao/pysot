@@ -27,11 +27,12 @@ class SiamRPNRBTracker(SiamRPNTracker):
         self.visualize = True
         self.visualize_gmm = False
         self.CONFIDENCE_LOW = 0.985
-        self.instance_sizes = [cfg.TRACK.INSTANCE_SIZE, cfg.TRACK.LOST_INSTANCE_SIZE]
+        self.instance_sizes = {x: cfg.TRACK.INSTANCE_SIZE +60 * x for x in range(10)}
 
         self.state_update = False
         self.state_cross = False
         self.state_lost = False
+        self.state_lost_cnt=0
 
         self.center_std_thre=2.3
         self.similar_thre = 1.2
@@ -283,17 +284,18 @@ class SiamRPNRBTracker(SiamRPNTracker):
     def find_proposal_bbox(self, penalty, score_nms,pred_bbox_nms, repond_idx, score_size, scale_z):
 
         proposal_bbox = []
-        for cord in repond_idx:
-            idx = np.ravel_multi_index(cord, (score_size, score_size))
-            bb = pred_bbox_nms[:, idx] / scale_z
+        if repond_idx !=0: # sampling_state == True
+            for cord in repond_idx:
+                idx = np.ravel_multi_index(cord, (score_size, score_size))
+                bb = pred_bbox_nms[:, idx] / scale_z
 
-            lr = penalty[idx] * score_nms[idx] * cfg.TRACK.LR
-            cx = bb[0] + self.center_pos[0]
-            cy = bb[1] + self.center_pos[1]
-            width = self.size[0] * (1 - lr) + bb[2] * lr
-            height = self.size[1] * (1 - lr) + bb[3] * lr
+                lr = penalty[idx] * score_nms[idx] * cfg.TRACK.LR
+                cx = bb[0] + self.center_pos[0]
+                cy = bb[1] + self.center_pos[1]
+                width = self.size[0] * (1 - lr) + bb[2] * lr
+                height = self.size[1] * (1 - lr) + bb[3] * lr
 
-            proposal_bbox.append([cx , cy , width, height])
+                proposal_bbox.append([cx , cy , width, height])
 
         return proposal_bbox
 
@@ -380,10 +382,7 @@ class SiamRPNRBTracker(SiamRPNTracker):
             bbox(list):[x, y, width, height]
         """
 
-        if self.longterm_state:
-            instance_size = cfg.TRACK.LOST_INSTANCE_SIZE
-        else:
-            instance_size = cfg.TRACK.INSTANCE_SIZE
+        instance_size = self.instance_sizes[0]
 
         w_z = self.size[0] + cfg.TRACK.CONTEXT_AMOUNT * np.sum(self.size)
         h_z = self.size[1] + cfg.TRACK.CONTEXT_AMOUNT * np.sum(self.size)
@@ -400,36 +399,27 @@ class SiamRPNRBTracker(SiamRPNTracker):
         outputs = self.model.track(x_crop)
         score_nms,pred_bbox_nms,best_score=self.score_nms(outputs,score_size,anchors)
         score_map = score_nms.reshape(score_size, score_size)
+        penalty, pbbox = self.find_pbbox(score_nms,pred_bbox_nms,score_size,scale_z)
+        repond_idx = self.segment_groups(score_map)
 
         if self.visualize:
             frame = rubost_track.visualize_tracking_heated(self.img_tensor2cpu(x_crop),score_map, instance_size,self.frame_num, best_score)
 
-        penalty, pbbox = self.find_pbbox(score_nms,pred_bbox_nms,score_size,scale_z)
-        repond_idx = self.segment_groups(score_map)
-        if not self.state_sampling:
-            self.center_pos = np.array([pbbox[0], pbbox[1]])
-            self.size = np.array([pbbox[2], pbbox[3]])
-
-            cx, cy, width, height = self._bbox_clip(pbbox[0], pbbox[1], pbbox[2],
-                                                    pbbox[3], img.shape[:2])
-            bbox = [cx - width / 2,
-                    cy - height / 2,
-                    width,
-                    height]
-            return {
-            'bbox': bbox,
-            's_x': s_x,
-            'score_map': score_map}
+        if best_score <= self.CONFIDENCE_LOW or self.state_sampling == False:
+            self.state_update = False
+            self.state_lost = True
+            self.state_lost_cnt+=1
 
         proposal_bbox = self.find_proposal_bbox(penalty, score_nms,pred_bbox_nms, repond_idx, score_size, scale_z)
         filtered_ppbbox = self.merge_bbox(img, pbbox, proposal_bbox)
 
-        if self.state_update:
-            self.template_upate(self.zf_gt, 0.126)
-
         if self.state_lost:
-            # compare hist with proposals
-            pass
+            self.state_lost=False
+            return {'bbox': self.bbox,'s_x': s_x,'score_map': score_map}
+
+        if self.state_update:
+            self.template_upate(self.zf_gt, 0.0626)
+
         if self.state_cross:
             self.cross_count+=1
 
@@ -447,13 +437,9 @@ class SiamRPNRBTracker(SiamRPNTracker):
                         cy - height / 2,
                         width,
                         height]
+                self.bbox=bbox
 
-                return {
-                    'bbox': bbox,
-                    's_x': s_x,
-                    'score_map': score_map,
-                    'proposal_bbox': filtered_ppbbox
-                }
+                return {'bbox': self.bbox, 's_x': s_x, 'score_map': score_map, 'proposal_bbox': filtered_ppbbox}
 
 
             if len(filtered_ppbbox):
@@ -475,6 +461,7 @@ class SiamRPNRBTracker(SiamRPNTracker):
                             cy - height / 2,
                             width,
                             height]
+                    self.bbox=bbox
                     self.state_cross = False
 
                 self.cross_count = 0
@@ -489,72 +476,41 @@ class SiamRPNRBTracker(SiamRPNTracker):
                         cy - height / 2,
                         width,
                         height]
-
+                self.bbox = bbox
                 self.cross_count2+=1
 
 
-            return {
-                'bbox': bbox,
-                's_x': s_x,
-                'score_map': score_map,
-                'proposal_bbox': filtered_ppbbox
-            }
+            return {'bbox': self.bbox, 's_x': s_x, 'score_map': score_map, 'proposal_bbox': filtered_ppbbox}
 
 
-        if best_score <= self.CONFIDENCE_LOW:
-            self.state_update = False
-            self.state_lost= True
+        self.center_pos = np.array([pbbox[0], pbbox[1]])
+        self.size = np.array([pbbox[2], pbbox[3]])
 
-            cx = self.center_pos[0]
-            cy = self.center_pos[1]
-            width = self.size[0]
-            height = self.size[1]
-            self.center_pos = np.array([cx, cy])
-            self.size = np.array([width, height])
-
-            cx, cy, width, height = self._bbox_clip(cx, cy, width,
-                                                    height, img.shape[:2])
-            bbox = [cx - width / 2,
-                    cy - height / 2,
-                    width,
-                    height]
-        else:
-
-            self.center_pos = np.array([pbbox[0], pbbox[1]])
-            self.size = np.array([pbbox[2], pbbox[3]])
-
-            cx, cy, width, height = self._bbox_clip(pbbox[0], pbbox[1], pbbox[2],
-                                                    pbbox[3], img.shape[:2])
-            bbox = [cx - width / 2,
-                    cy - height / 2,
-                    width,
-                    height]
+        cx, cy, width, height = self._bbox_clip(pbbox[0], pbbox[1], pbbox[2],
+                                                pbbox[3], img.shape[:2])
+        self.bbox = [cx - width / 2,
+                     cy - height / 2,
+                     width,
+                     height]
 
         if self.state_std:
             if not len(filtered_ppbbox):
                 self.state_update = True
-
-            self.last_patch = img[int(bbox[1]):int(bbox[1] + bbox[3]),
-                     int(bbox[0]):int(bbox[0] + bbox[2]), :]
         else:
             self.state_update = False
             self.state_cross=True
 
         if self.state_update:
-            self.template_upate(self.template(img, bbox), 0.226)
-            # self.zf_bbox_global=self.feature_mix(self.zf_bbox_global,
-            #                                      self.img_similar.get_feature(self.crop_bbox(img,bbox)),
-            #                                      0.126)
+            self.template_upate(self.template(img, self.bbox), 0.0626)
+            self.zf_bbox_global=self.feature_mix(self.zf_bbox_global,
+                                                 self.img_similar.get_feature(self.crop_bbox(img,self.bbox)),
+                                                 0.0626)
 
         if self.visualize:
             rubost_track.put_text_update_std(frame,self.center_std,self.state_update)
 
-        return {
-            'bbox': bbox,
-            's_x': s_x,
-            'score_map': score_map,
-            'proposal_bbox': filtered_ppbbox
-        }
+        return {'bbox': self.bbox,'s_x': s_x,'score_map': score_map,'proposal_bbox': filtered_ppbbox}
+
 
     def similar_compare_deep(self,img,bbox,filtered_ppbbox):
         score1 = self.img_similar.similarity_score(self.zf_bbox_global,
@@ -580,10 +536,13 @@ class SiamRPNRBTracker(SiamRPNTracker):
         return score1,score2
 
     def crop_bbox(self,img,bbox):
+        bbox=np.array(bbox)
+        bbox[np.where(bbox < 0)] = 0
+
         return img[int(bbox[1]):int(bbox[1] + bbox[3]),
                  int(bbox[0]):int(bbox[0] + bbox[2]), :]
 
-    # def crop_bbox(self,img,bbox):
+    # def crop_bbox_with_margin(self,img,bbox):
     #     # bbox: (x, y, w, h) bbox
     #     center_pos = np.array([bbox[0] + (bbox[2] - 1) / 2,
     #                                 bbox[1] + (bbox[3] - 1) / 2])

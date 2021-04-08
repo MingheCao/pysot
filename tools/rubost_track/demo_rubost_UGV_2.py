@@ -20,15 +20,6 @@ import matplotlib.pyplot as plt
 from tools.rubost_track import rubost_track
 
 import json
-torch.set_num_threads(1)
-
-parser = argparse.ArgumentParser(description='tracking demo')
-parser.add_argument('--config', type=str, help='config file')
-parser.add_argument('--snapshot', type=str, help='model name')
-parser.add_argument('--video_name', default='', type=str,
-                    help='videos or image files')
-args = parser.parse_args()
-
 
 def get_frames(video_name):
     images = glob(os.path.join(video_name, '*.jp*'))
@@ -38,7 +29,7 @@ def get_frames(video_name):
         frame = cv2.imread(img)
         yield frame,img
 
-def main():
+def main(args):
     # load config
     cfg.merge_from_file(args.config)
     cfg.CUDA = torch.cuda.is_available() and cfg.CUDA
@@ -59,21 +50,17 @@ def main():
     cv2.namedWindow(video_name, cv2.WND_PROP_FULLSCREEN)
     cv2.moveWindow(video_name, 200, 220)
 
-    fig = plt.figure(figsize=(6, 2.5))
-    plt.get_current_fig_manager().window.wm_geometry("+1100+220")
-    # mng=plt.get_current_fig_manager()
-    # mng.window.SetPosition((500, 0))
-
-    total_frames=len(glob(os.path.join(args.video_name, '*.jp*')))
-    rects = np.zeros((total_frames, 4))
+    respath=os.path.join(args.save_path,args.video_name.split('/')[-1]+ '.txt')
+    rects = np.loadtxt(respath,delimiter=',')
 
     with open('/'.join(args.video_name.split('/')[:-1]) + '/UGV.json') as f:
         json_info = json.load(f)
     first_frame = True
 
+    rects[0,:] = json_info[video_name]['init_rect']
 
-    start_frame=1
-    pluse_frame=10
+    start_frame=250
+    pluse_frame=100000
 
     for frame,img in get_frames(args.video_name):
         frame_num=img.split('/')[-1].split('.')[0]
@@ -82,11 +69,12 @@ def main():
 
         if first_frame:
             try:
-                init_rect = cv2.selectROI(video_name, frame, False, False)
-                gt_rects = np.loadtxt(args.video_name.replace('img', 'groundtruth_rect.txt'), delimiter=',',
-                                      dtype='int')
+                # init_rect = cv2.selectROI(video_name, frame, False, False)
+                # gt_rects = np.loadtxt(args.video_name.replace('img', 'groundtruth_rect.txt'), delimiter=',',
+                #                       dtype='int')
                 # init_rect = gt_rects[int(frame_num), :]
-                # init_rect = json_info[video_name]['init_rect']
+                init_rect = json_info[video_name]['gt_rect'][start_frame - 1]
+                rects[0,:] = init_rect
             except:
                 exit()
             tracker.init(frame, init_rect)
@@ -116,12 +104,20 @@ def main():
             cv2.imshow(video_name, frame)
             if int(frame_num) < pluse_frame:
                 cv2.waitKey(1)
-
             else:
-                cv2.waitKey(0)
-                data_name = args.video_name.split('/')[-2]
+                break
 
-
+    np.savetxt(respath, rects,delimiter=',')
 
 if __name__ == '__main__':
-    main()
+    torch.set_num_threads(1)
+    parser = argparse.ArgumentParser(description='tracking demo')
+    parser.add_argument('--config', type=str, help='config file')
+    parser.add_argument('--snapshot', type=str, help='model name')
+    parser.add_argument('--video_name', default='/home/rislab/Workspace/pysot/testing_dataset/UGV/210121_2', type=str,
+                        help='videos or image files')
+    parser.add_argument('--save_path', default='/home/rislab/Workspace/pysot/rb_result/UGV_results', type=str,
+                        help='')
+    args = parser.parse_args()
+
+    main(args)

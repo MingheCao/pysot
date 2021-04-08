@@ -38,7 +38,7 @@ ANCHOR:
     ANCHOR_NUM: 5
 
 TRACK:
-    TYPE: 'SiamRPNRBTracker'
+    TYPE: 'SiamMaskTracker'
     PENALTY_K: 0.10
     WINDOW_INFLUENCE: 0.41
     LR: 0.32
@@ -47,3 +47,4 @@ TRACK:
     BASE_SIZE: 8
     CONTEXT_AMOUNT: 0.5
     MASK_THERSHOLD: 0.15
+

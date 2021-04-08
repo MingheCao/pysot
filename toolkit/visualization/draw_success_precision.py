@@ -39,7 +39,9 @@ def draw_success_precision(success_ret, name, videos, attr, precision_ret=None,
     plt.xticks(np.arange(xmin, xmax+0.01, 0.1))
     plt.yticks(np.arange(ymin, ymax, 0.1))
     ax.set_aspect((xmax - xmin)/(ymax-ymin))
-    plt.show()
+    plt.savefig('/home/rislab/Workspace/pysot/rb_result/' + attr + '-success.jpg',bbox_inches='tight',pad_inches = 0,dpi=300)
+    # plt.show()
+
 
     if precision_ret:
         # norm precision plot
@@ -76,7 +78,9 @@ def draw_success_precision(success_ret, name, videos, attr, precision_ret=None,
         plt.xticks(np.arange(xmin, xmax+0.01, 5))
         plt.yticks(np.arange(ymin, ymax, 0.1))
         ax.set_aspect((xmax - xmin)/(ymax-ymin))
-        plt.show()
+        plt.savefig('/home/rislab/Workspace/pysot/rb_result/' + attr + '-precision.jpg', bbox_inches='tight',
+                    pad_inches=0, dpi=300)
+        # plt.show()
 
     # norm precision plot
     if norm_precision_ret:

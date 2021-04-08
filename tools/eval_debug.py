@@ -33,7 +33,7 @@ def main():
     tracker_dir = os.path.join(args.tracker_path, args.dataset)
     trackers = glob(os.path.join(args.tracker_path,
                                  args.dataset,
-                                 args.tracker_prefix+'*'))
+                                 '*'))
     trackers = [os.path.basename(x) for x in trackers]
 
     assert len(trackers) > 0
@@ -84,10 +84,10 @@ def main():
         dataset.set_tracker(tracker_dir, trackers)
         benchmark = OPEBenchmark(dataset)
         success_ret = {}
-        with Pool(processes=args.num) as pool:
-            for ret in tqdm(pool.imap_unordered(benchmark.eval_success,
-                trackers), desc='eval success', total=len(trackers), ncols=100):
-                success_ret.update(ret)
+
+        for ret in benchmark.eval_success(trackers):
+            success_ret.update(ret)
+
         precision_ret = {}
         with Pool(processes=args.num) as pool:
             for ret in tqdm(pool.imap_unordered(benchmark.eval_precision,

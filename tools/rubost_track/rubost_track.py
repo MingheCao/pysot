@@ -312,13 +312,14 @@ def put_text_update_std(frame,std,update_state):
     cv2.waitKey(1)
 
 def plot_search_area(outputs,frame):
-    rect_length = outputs['s_x']
-    bbox = list(map(int, outputs['bbox']))
-    cor_x = int(bbox[0] + bbox[2] / 2 - rect_length / 2)
-    cor_y = int(bbox[1] + bbox[3] / 2 - rect_length / 2)
-    cv2.rectangle(frame, (cor_x, cor_y),
-                  (int(cor_x + rect_length), int(cor_y + rect_length)),
-                  (0, 0, 255), 3)
+    if 's_x' in outputs:
+        rect_length = outputs['s_x']
+        bbox = list(map(int, outputs['bbox']))
+        cor_x = int(bbox[0] + bbox[2] / 2 - rect_length / 2)
+        cor_y = int(bbox[1] + bbox[3] / 2 - rect_length / 2)
+        cv2.rectangle(frame, (cor_x, cor_y),
+                      (int(cor_x + rect_length), int(cor_y + rect_length)),
+                      (0, 0, 255), 3)
     return frame
 
 def visualze_template(template,num):

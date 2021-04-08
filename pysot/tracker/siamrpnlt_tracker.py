@@ -106,5 +106,6 @@ class SiamRPNLTTracker(SiamRPNTracker):
 
         return {
                 'bbox': bbox,
-                'best_score': best_score
+                'best_score': best_score,
+                's_x':s_x
                }
