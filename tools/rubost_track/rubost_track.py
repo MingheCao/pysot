@@ -306,16 +306,16 @@ def plot_xcrop_heated(x_crop,score_map, instance_size,frame_num,best_score):
     # strshow = 'bestscore:' + str(best_score).split('.')[0] + '.' + str(best_score).split('.')[1][:3]
     # frame_show = cv2.putText(frame_show, strshow, (110, 15), cv2.FONT_HERSHEY_SIMPLEX,
                              # 0.5, (0, 255, 255), 1, cv2.LINE_AA)
-    # cv2.imwrite('/home/rislab/Workspace/pysot/rb_result/figure2/'+str(int(frame_num)) +'.jpg',frame_show)
+    cv2.imwrite('/home/rislab/Workspace/pysot/rb_result/stds/'+str(int(frame_num)) +'.jpg',frame_show)
     return frame_show
 
 def put_text_update_std(frame,std,update_state):
-    strshow = 'std:' + str(std).split('.')[0] + '.' + str(std).split('.')[1][:3]
-    frame= cv2.putText(frame, strshow, (15, 30), cv2.FONT_HERSHEY_SIMPLEX,
-                             0.5, (0, 255, 255), 1, cv2.LINE_AA)
-    strshow = 'update:' + str(update_state)
-    frame = cv2.putText(frame, strshow, (110, 30), cv2.FONT_HERSHEY_SIMPLEX,
-                             0.5, (0, 255, 255), 1, cv2.LINE_AA)
+    # strshow = 'std:' + str(std).split('.')[0] + '.' + str(std).split('.')[1][:3]
+    # frame= cv2.putText(frame, strshow, (15, 30), cv2.FONT_HERSHEY_SIMPLEX,
+    #                          0.5, (0, 255, 255), 1, cv2.LINE_AA)
+    # strshow = 'update:' + str(update_state)
+    # frame = cv2.putText(frame, strshow, (110, 30), cv2.FONT_HERSHEY_SIMPLEX,
+    #                          0.5, (0, 255, 255), 1, cv2.LINE_AA)
 
     cv2.imshow('Heated', frame)
     cv2.waitKey(1)

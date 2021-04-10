@@ -59,7 +59,7 @@ def main(args):
 
     rects[0,:] = json_info[video_name]['init_rect']
 
-    start_frame=250
+    start_frame=1
     pluse_frame=100000
 
     for frame,img in get_frames(args.video_name):
@@ -74,7 +74,6 @@ def main(args):
                 #                       dtype='int')
                 # init_rect = gt_rects[int(frame_num), :]
                 init_rect = json_info[video_name]['gt_rect'][start_frame - 1]
-                rects[0,:] = init_rect
             except:
                 exit()
             tracker.init(frame, init_rect)
@@ -114,9 +113,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='tracking demo')
     parser.add_argument('--config', type=str, help='config file')
     parser.add_argument('--snapshot', type=str, help='model name')
-    parser.add_argument('--video_name', default='/home/rislab/Workspace/pysot/testing_dataset/UGV/210121_2', type=str,
+    parser.add_argument('--video_name', default='/home/rislab/Workspace/pysot/testing_dataset/UGV/210120_4', type=str,
                         help='videos or image files')
-    parser.add_argument('--save_path', default='/home/rislab/Workspace/pysot/rb_result/UGV_results', type=str,
+    parser.add_argument('--save_path', default='/home/rislab/Workspace/pysot/rb_result/Ours(Siamrpn)', type=str,
                         help='')
     args = parser.parse_args()
 

@@ -13,7 +13,7 @@ from toolkit.datasets import OTBDataset, UAVDataset, LaSOTDataset, \
         VOTDataset, NFSDataset, VOTLTDataset
 from toolkit.evaluation import OPEBenchmark, AccuracyRobustnessBenchmark, \
         EAOBenchmark, F1Benchmark
-from toolkit.visualization.draw_success_precision import  draw_success_precision
+from toolkit.visualization.draw_success_precision import  draw_success_precision,draw_success_precision_paper
 
 parser = argparse.ArgumentParser(description='tracking evaluation')
 parser.add_argument('--tracker_path', '-p', type=str,
@@ -77,12 +77,12 @@ def main():
                 '210121_3': 'UGV15',
                 '210121_4': 'UGV16',
                 '210121_5': 'UGV17'}
-    attr='210121_2'
-    draw_success_precision(success_ret, 'UGV', attr, UGV_dict[attr], precision_ret=precision_ret, bold_name='Ours')
+    attr='210120_4'
+    save_path = '/home/rislab/Workspace/pysot/rb_result/opefigs/'
+    draw_success_precision_paper(success_ret, 'UGV', attr, UGV_dict[attr], precision_ret=precision_ret, bold_name=['Ours(Siamrpn)','Ours(Siamrpn++)'],save = True,save_path=save_path)
     # for nn in UGV_dict.keys():
-    #     draw_success_precision(success_ret,'UGV',nn,UGV_dict[nn],precision_ret=precision_ret,bold_name='Ours')
-
-    draw_success_precision(success_ret,'UGV',list(success_ret['Ours(Alexnet)'].keys()),'all',precision_ret=precision_ret,bold_name='Ours(Alexnet)')
+    #     draw_success_precision_paper(success_ret,'UGV',nn,UGV_dict[nn],precision_ret=precision_ret,bold_name=['Ours(Siamrpn)','Ours(Siamrpn++)'],save = True,save_path=save_path)
+    draw_success_precision_paper(success_ret,'UGV',list(success_ret['Ours(Siamrpn)'].keys()),'all',precision_ret=precision_ret,bold_name=['Ours(Siamrpn)','Ours(Siamrpn++)'],save = True,save_path=save_path)
 
 
 if __name__ == '__main__':

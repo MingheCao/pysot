@@ -61,19 +61,18 @@ def main():
 
     fig = plt.figure(figsize=(6, 2.5))
     plt.get_current_fig_manager().window.wm_geometry("+1100+220")
-    # mng=plt.get_current_fig_manager()
-    # mng.window.SetPosition((500, 0))
 
     total_frames=len(glob(os.path.join(args.video_name, '*.jp*')))
     rects = np.zeros((total_frames, 4))
+    stds=np.zeros((total_frames, 2))
+    bestscores=np.zeros((total_frames, 2))
 
     # with open('/'.join(args.video_name.split('/')[:-1]) + '/UGV.json') as f:
     #     json_info = json.load(f)
     first_frame = True
 
-
-    start_frame=150
-    pluse_frame=188
+    start_frame=1
+    pluse_frame=250
 
     for frame,img in get_frames(args.video_name):
         frame_num=img.split('/')[-1].split('.')[0]
@@ -96,6 +95,8 @@ def main():
             outputs = tracker.track(frame)
             tracker.frame_num= int(frame_num)
             rects[int(frame_num) - 1, :] = np.array(outputs['bbox'])
+            stds[int(frame_num) - 1, 0] = int(frame_num)
+            stds[int(frame_num) - 1, 1] = tracker.center_std
 
             # rubost_track.visualize_response3d(outputs, fig, '1,2,1', frame_num)
 
@@ -116,12 +117,10 @@ def main():
             cv2.imshow(video_name, frame)
             if int(frame_num) < pluse_frame:
                 cv2.waitKey(1)
-
             else:
                 cv2.waitKey(0)
                 data_name = args.video_name.split('/')[-2]
-
-
+                np.savetxt('/home/rislab/Workspace/pysot/rb_result/stds.txt', stds, delimiter=',')
 
 if __name__ == '__main__':
     main()

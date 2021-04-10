@@ -26,6 +26,7 @@ class SiamRPNRBTracker(SiamRPNTracker):
 
         self.visualize = True
         self.visualize_gmm = False
+        self.save_img= False
         self.CONFIDENCE_LOW = 0.985
         self.instance_sizes = {x: cfg.TRACK.INSTANCE_SIZE +60 * x for x in range(10)}
 
@@ -502,9 +503,9 @@ class SiamRPNRBTracker(SiamRPNTracker):
 
         if self.state_update:
             self.template_upate(self.template(img, self.bbox), 0.0626)
-            self.zf_bbox_global=self.feature_mix(self.zf_bbox_global,
-                                                 self.img_similar.get_feature(self.crop_bbox(img,self.bbox)),
-                                                 0.0626)
+            # self.zf_bbox_global=self.feature_mix(self.zf_bbox_global,
+            #                                      self.img_similar.get_feature(self.crop_bbox(img,self.bbox)),
+            #                                      0.0626)
 
         if self.visualize:
             rubost_track.put_text_update_std(frame,self.center_std,self.state_update)
@@ -518,10 +519,12 @@ class SiamRPNRBTracker(SiamRPNTracker):
                                                        self.crop_bbox(img,bbox)))
         if self.visualize:
             cv2.imshow('1', self.crop_bbox(img, bbox))
+            if self.save_img:
+                cv2.imwrite('/home/rislab/Workspace/pysot/rb_result/stds/' + str(self.frame_num) + '_1.jpg', self.crop_bbox(img, bbox))
             cv2.waitKey(1)
 
         score2 = []
-        for fbbox in filtered_ppbbox:
+        for idx,fbbox in enumerate(filtered_ppbbox):
             fbbox=np.array(fbbox)
             fbbox[np.where(fbbox < 0 )]=0
             score = self.img_similar.similarity_score(self.zf_bbox_global,
@@ -531,6 +534,9 @@ class SiamRPNRBTracker(SiamRPNTracker):
 
             if self.visualize:
                 cv2.imshow('2', self.crop_bbox(img, fbbox))
+                if self.save_img:
+                    cv2.imwrite('/home/rislab/Workspace/pysot/rb_result/stds/' + str(self.frame_num) + '_'+str(idx)+'_2.jpg',
+                                self.crop_bbox(img, fbbox))
                 cv2.waitKey(1)
 
         return score1,score2
