@@ -18,16 +18,7 @@ from pysot.tracker.tracker_builder import build_tracker
 import matplotlib.pyplot as plt
 
 from tools.rubost_track import rubost_track
-
 import json
-
-def get_frames(video_name):
-    images = glob(os.path.join(video_name, '*.jp*'))
-    images = sorted(images,
-                    key=lambda x: int(x.split('/')[-1].split('.')[0]))
-    for img in images:
-        frame = cv2.imread(img)
-        yield frame,img
 
 def main(args):
     # load config
@@ -55,18 +46,19 @@ def main(args):
     # mng=plt.get_current_fig_manager()
     # mng.window.SetPosition((500, 0))
 
-    total_frames=len(glob(os.path.join(args.video_name, '*.jp*')))
-    rects = np.zeros((total_frames, 4))
-
     with open('/'.join(args.video_name.split('/')[:-1]) + '/UGV.json') as f:
         json_info = json.load(f)
+    total_frames=len(json_info[video_name]['img_names'])
+    rects = np.zeros((total_frames, 4))
+
     first_frame = True
 
     start_frame=1
     pluse_frame=100000
 
-    for frame,img in get_frames(args.video_name):
+    for img in json_info[video_name]['img_names']:
         frame_num=img.split('/')[-1].split('.')[0]
+        frame = cv2.imread('/'.join(args.video_name.split('/')[:-1])+'/' +img)
         if int(frame_num) < start_frame:
             continue
 
@@ -111,7 +103,7 @@ def main(args):
                 cv2.waitKey(0)
 
             data_name = args.video_name.split('/')[-1]
-            path='/home/rislab/Workspace/pysot/rb_result/UGV_results/' + data_name + '.txt'
+            path='/home/rislab/Workspace/pysot/rb_result/Ours(Siamrpn)/' + data_name + '.txt'
 
             np.savetxt(path, rects,delimiter=',')
 

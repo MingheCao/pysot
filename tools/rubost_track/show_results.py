@@ -78,7 +78,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='tracking demo')
     parser.add_argument('--dataset', type=str, default='UGV',help='config file')
-    parser.add_argument('--video_name', default='210121_3', type=str,
+    parser.add_argument('--video_name', default='210121_2', type=str,
                         help='videos or image files')
     args = parser.parse_args()
     main(args.dataset,args.video_name)

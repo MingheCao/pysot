@@ -59,8 +59,8 @@ def main(args):
 
     rects[0,:] = json_info[video_name]['init_rect']
 
-    start_frame=1
-    pluse_frame=100000
+    start_frame=1500
+    pluse_frame=13000
 
     for frame,img in get_frames(args.video_name):
         frame_num=img.split('/')[-1].split('.')[0]
