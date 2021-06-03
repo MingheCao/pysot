@@ -13,7 +13,7 @@ from toolkit.datasets import OTBDataset, UAVDataset, LaSOTDataset, \
         VOTDataset, NFSDataset, VOTLTDataset
 from toolkit.evaluation import OPEBenchmark, AccuracyRobustnessBenchmark, \
         EAOBenchmark, F1Benchmark
-from toolkit.visualization.draw_success_precision import  draw_success_precision,draw_success_precision_paper
+from toolkit.visualization.draw_success_precision import  draw_success_precision,draw_success_precision_paper,draw_success_precision_thesis
 
 parser = argparse.ArgumentParser(description='tracking evaluation')
 parser.add_argument('--tracker_path', '-p', type=str,
@@ -78,11 +78,12 @@ def main():
                 '210121_4': 'UGV16',
                 '210121_5': 'UGV17'}
     attr='210120_4'
-    save_path = '/home/rislab/Workspace/pysot/rb_result/opefigs/'
+    save_path = '/home/rislab/Workspace/pysot/rb_result/opefigs_chn/'
     # draw_success_precision_paper(success_ret, 'UGV', attr, UGV_dict[attr], precision_ret=precision_ret, bold_name=['Ours(Siamrpn)','Ours(Siamrpn++)'],save = True,save_path=save_path)
     # for nn in UGV_dict.keys():
     #     draw_success_precision_paper(success_ret,'UGV',nn,UGV_dict[nn],precision_ret=precision_ret,bold_name=['Ours(Siamrpn)','Ours(Siamrpn++)'],save = True,save_path=save_path)
-    draw_success_precision_paper(success_ret,'UGV',list(success_ret['Ours(Siamrpn)'].keys()),'all',precision_ret=precision_ret,bold_name=['Ours(Siamrpn)','Ours(Siamrpn++)'],save = True,save_path=save_path)
+    # draw_success_precision_paper(success_ret,'UGV',list(success_ret['本文方法(SiamRPN)'].keys()),'all',precision_ret=precision_ret,bold_name=['Ours(Siamrpn)','Ours(Siamrpn++)'],save = True,save_path=save_path)
+    draw_success_precision_thesis(success_ret,'UGV',list(success_ret['本文方法(SiamRPN)'].keys()),'all',precision_ret=precision_ret,bold_name=['Ours(Siamrpn)','Ours(Siamrpn++)'],save = True,save_path=save_path)
 
 if __name__ == '__main__':
     main()

@@ -1,0 +1,10 @@
+toolkit.version=4.0
+tracker.identifier=CSRDCF_OF_CNN_0d_3d_14_HOG_CN_sa40_we12
+tracker.protocol=file
+tracker.interpreter=matlab
+timestamp=2016-06-20 13:34:28
+platform=GLNXA64
+platform.maxsize=281474976710655.000000
+platform.endian=L
+environment=matlab
+environment.version=8.5.0.197613 (R2015a)

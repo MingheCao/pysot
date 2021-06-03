@@ -1,0 +1,9 @@
+toolkit.version=6.0.0
+tracker.identifier=SiamRPN
+tracker.interpreter=python
+timestamp=2018-06-15 18:13:39
+platform=GLNXA64
+platform.maxsize=281474976710655.000000
+platform.endian=L
+environment=matlab
+environment.version=9.1.0.441655 (R2016b)
