@@ -12,12 +12,11 @@ import numpy as np
 from glob import glob
 
 from pysot.core.config import cfg
-from pysot.models.model_builder import ModelBuilder
-from pysot.tracker.tracker_builder import build_tracker
 
-import matplotlib.pyplot as plt
+from robust_track_v2 import rb_utils
+from robust_track_v2.rb_tracker_v2 import rb_tracker_v2
+from robust_track_v2.siam_model import SiamModel
 
-from tools.rubost_track import rubost_track
 import json
 
 def main(args):
@@ -27,7 +26,7 @@ def main(args):
     device = torch.device('cuda' if cfg.CUDA else 'cpu')
 
     # create model
-    model = ModelBuilder()
+    model = SiamModel()
 
     # load model
     model.load_state_dict(torch.load(args.snapshot,
@@ -35,41 +34,36 @@ def main(args):
     model.eval().to(device)
 
     # build tracker
-    tracker = build_tracker(model)
+    tracker=rb_tracker_v2(model)
 
     video_name = args.video_name.split('/')[-1].split('.')[0]
+    base_path = '/'.join(args.video_name.split('/')[:-1])
     cv2.namedWindow(video_name, cv2.WND_PROP_FULLSCREEN)
     cv2.moveWindow(video_name, 200, 220)
 
-    fig = plt.figure(figsize=(6, 2.5))
-    plt.get_current_fig_manager().window.wm_geometry("+1100+220")
-    # mng=plt.get_current_fig_manager()
-    # mng.window.SetPosition((500, 0))
-
-    with open('/'.join(args.video_name.split('/')[:-1]) + '/UGV.json') as f:
+    with open('/'.join(args.video_name.split('/')[:-1]) + '/UAV123.json') as f:
         json_info = json.load(f)
-    total_frames=len(json_info[video_name]['img_names'])
-    rects = np.zeros((total_frames, 4))
-
     first_frame = True
 
-    start_frame=1
-    pluse_frame=100000
+    # respath=os.path.join(args.save_path,args.video_name.split('/')[-1]+ '.txt')
+    # rects = np.loadtxt(respath,delimiter=',')
+    # rects[0,:] = json_info[video_name]['init_rect']
 
-    for img in json_info[video_name]['img_names']:
+    start_frame=1
+    pluse_frame=13000
+
+    for img in sorted(json_info[video_name]['img_names']):
         frame_num=img.split('/')[-1].split('.')[0]
-        frame = cv2.imread('/'.join(args.video_name.split('/')[:-1])+'/' +img)
+        frame = cv2.imread(os.path.join(base_path,img))
         if int(frame_num) < start_frame:
             continue
 
         if first_frame:
             try:
-                # init_rect = cv2.selectROI(video_name, frame, False, False)
                 # gt_rects = np.loadtxt(args.video_name.replace('img', 'groundtruth_rect.txt'), delimiter=',',
                 #                       dtype='int')
                 # init_rect = gt_rects[int(frame_num), :]
-                init_rect = json_info[video_name]['init_rect']
-                rects[0,:] = init_rect
+                init_rect = json_info[video_name]['gt_rect'][start_frame - 1]
             except:
                 exit()
             tracker.init(frame, init_rect)
@@ -78,16 +72,16 @@ def main(args):
         else:
             outputs = tracker.track(frame)
             tracker.frame_num= int(frame_num)
-            rects[int(frame_num) - 1, :] = np.array(outputs['bbox'])
+            # rects[int(frame_num) - 1, :] = np.array(outputs['bbox'])
 
-            # rubost_track.visualize_response3d(outputs, fig, '1,2,1', frame_num)
+            # rb_utils.visualize_response3d(outputs, fig, '1,2,1', frame_num)
 
             bbox = list(map(int, outputs['bbox']))
 
             cv2.rectangle(frame, (bbox[0], bbox[1]),
                               (bbox[0]+bbox[2], bbox[1]+bbox[3]),
                               (0, 255, 0), 3)
-            frame= rubost_track.plot_search_area(outputs, frame)
+            frame= rb_utils.plot_search_area(outputs, frame)
 
             if 'proposal_bbox' in outputs:
                 for bbox in outputs['proposal_bbox']:
@@ -100,19 +94,19 @@ def main(args):
             if int(frame_num) < pluse_frame:
                 cv2.waitKey(1)
             else:
-                cv2.waitKey(0)
+                break
 
-            data_name = args.video_name.split('/')[-1]
-            path='/home/rislab/Workspace/pysot/rb_result/Ours(Siamrpn)/' + data_name + '.txt'
-            # np.savetxt(path, rects,delimiter=',')
+    # np.savetxt(respath, rects,delimiter=',')
 
 if __name__ == '__main__':
     torch.set_num_threads(1)
     parser = argparse.ArgumentParser(description='tracking demo')
     parser.add_argument('--config', type=str, help='config file')
     parser.add_argument('--snapshot', type=str, help='model name')
-    parser.add_argument('--video_name', default='', type=str,
+    parser.add_argument('--video_name', default='/home/rislab/Workspace/pysot/testing_dataset/UAV123/person20', type=str,
                         help='videos or image files')
+    parser.add_argument('--save_path', default='', type=str,
+                        help='')
     args = parser.parse_args()
 
     main(args)

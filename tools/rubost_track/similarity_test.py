@@ -14,69 +14,52 @@ from glob import glob
 from pysot.core.config import cfg
 from pysot.models.model_builder import ModelBuilder
 from pysot.tracker.tracker_builder import build_tracker
-
 import matplotlib.pyplot as plt
+
+import imageSimilarity_reid
 
 from tools.rubost_track import rubost_track
 import json
 
+def crop_bbox(img, bbox):
+    bbox = np.array(bbox)
+    bbox[np.where(bbox < 0)] = 0
+
+    return img[int(bbox[1]):int(bbox[1] + bbox[3]),
+           int(bbox[0]):int(bbox[0] + bbox[2]), :]
+
 def main(args):
-    # load config
-    cfg.merge_from_file(args.config)
-    cfg.CUDA = torch.cuda.is_available() and cfg.CUDA
-    device = torch.device('cuda' if cfg.CUDA else 'cpu')
-
-    # create model
-    model = ModelBuilder()
-
-    # load model
-    model.load_state_dict(torch.load(args.snapshot,
-        map_location=lambda storage, loc: storage.cpu()))
-    model.eval().to(device)
-
-    # build tracker
-    tracker = build_tracker(model)
 
     video_name = args.video_name.split('/')[-1].split('.')[0]
-    cv2.namedWindow(video_name, cv2.WND_PROP_FULLSCREEN)
-    cv2.moveWindow(video_name, 200, 220)
-
-    fig = plt.figure(figsize=(6, 2.5))
-    plt.get_current_fig_manager().window.wm_geometry("+1100+220")
-    # mng=plt.get_current_fig_manager()
-    # mng.window.SetPosition((500, 0))
 
     with open('/'.join(args.video_name.split('/')[:-1]) + '/UGV.json') as f:
         json_info = json.load(f)
     total_frames=len(json_info[video_name]['img_names'])
-    rects = np.zeros((total_frames, 4))
+    scores = []
 
     first_frame = True
 
-    start_frame=1
-    pluse_frame=100000
+    cfg={}
+    cfg['sys_device_ids']=(0,)
+    cfg['resize_h_w'] = (256, 128)
+    cfg['last_conv_stride'] =1
+    cfg['ckpt_file'] = ''
+    cfg['model_weight_file']='/home/rislab/Workspace/person-reid-triplet-loss-baseline/weights/cuhk03_stride1/model_weight.pth'
+    sim=imageSimilarity_reid(cfg)
 
     for img in json_info[video_name]['img_names']:
         frame_num=img.split('/')[-1].split('.')[0]
         frame = cv2.imread('/'.join(args.video_name.split('/')[:-1])+'/' +img)
-        if int(frame_num) < start_frame:
-            continue
 
         if first_frame:
             try:
-                # init_rect = cv2.selectROI(video_name, frame, False, False)
-                # gt_rects = np.loadtxt(args.video_name.replace('img', 'groundtruth_rect.txt'), delimiter=',',
-                #                       dtype='int')
-                # init_rect = gt_rects[int(frame_num), :]
                 init_rect = json_info[video_name]['init_rect']
-                rects[0,:] = init_rect
+
+                scores.append(0)
             except:
                 exit()
             tracker.init(frame, init_rect)
-            first_frame = False
-
         else:
-            outputs = tracker.track(frame)
             tracker.frame_num= int(frame_num)
             rects[int(frame_num) - 1, :] = np.array(outputs['bbox'])
 

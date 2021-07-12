@@ -106,7 +106,7 @@ def main(args):
             else:
                 break
 
-    np.savetxt(respath, rects,delimiter=',')
+    # np.savetxt(respath, rects,delimiter=',')
 
 if __name__ == '__main__':
     torch.set_num_threads(1)

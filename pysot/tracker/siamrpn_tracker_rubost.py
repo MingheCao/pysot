@@ -548,26 +548,6 @@ class SiamRPNRBTracker(SiamRPNTracker):
         return img[int(bbox[1]):int(bbox[1] + bbox[3]),
                  int(bbox[0]):int(bbox[0] + bbox[2]), :]
 
-    # def crop_bbox_with_margin(self,img,bbox):
-    #     # bbox: (x, y, w, h) bbox
-    #     center_pos = np.array([bbox[0] + (bbox[2] - 1) / 2,
-    #                                 bbox[1] + (bbox[3] - 1) / 2])
-    #     size = np.array([bbox[2], bbox[3]])
-    #
-    #     # calculate z crop size
-    #     w_z = size[0] + cfg.TRACK.CONTEXT_AMOUNT * np.sum(size)
-    #     h_z = size[1] + cfg.TRACK.CONTEXT_AMOUNT * np.sum(size)
-    #     s_z = round(np.sqrt(w_z * h_z))
-    #
-    #     # calculate channle average
-    #     channel_average = np.mean(img, axis=(0, 1))
-    #
-    #     # get crop
-    #     img_crop = self.get_subwindow(img, center_pos,
-    #                                 cfg.TRACK.EXEMPLAR_SIZE,
-    #                                 s_z, channel_average)
-    #
-    #     return img_crop.permute(2, 3, 1, 0).squeeze().cpu().detach().numpy().astype(np.uint8)
 
     def feature_mix(self,feature1,feature2,wt):
         return feature1*(1-wt) + feature2*wt

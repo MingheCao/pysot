@@ -48,14 +48,6 @@ class ModelBuilder(nn.Module):
             zf = self.neck(zf)
         self.zf = zf
 
-    def template_rb(self, z):
-        zf = self.backbone(z)
-        if cfg.MASK.MASK:
-            zf = zf[-1]
-        if cfg.ADJUST.ADJUST:
-            zf = self.neck(zf)
-        return zf
-
     def track(self, x):
         xf = self.backbone(x)
         if cfg.MASK.MASK:
