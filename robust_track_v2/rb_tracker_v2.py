@@ -11,7 +11,6 @@ from pysot.core.config import cfg
 from pysot.tracker.siamrpn_tracker import SiamRPNTracker
 
 import torch
-# from tools.rubost_track import imageSimilarity_deeprank
 
 from robust_track_v2 import rb_utils as utils
 
@@ -36,7 +35,7 @@ class rb_tracker_v2(SiamRPNTracker):
         self.center_std_thre = 2.3
         self.similar_thre = 1.2
 
-        # self.img_similar=imageSimilarity_deeprank.imageSimilarity_deeprank()
+        self.neg_flt_rate = 0.1
 
     def init(self, img, bbox):
         """
@@ -50,11 +49,12 @@ class rb_tracker_v2(SiamRPNTracker):
         self.zf_gt = self.model.zf
         self.zf_global = self.model.zf
 
-        self.zf_trust = self.model.zf
+        self.zf_trusts = []
+        self.zf_trusts.append(self.model.zf)
+
         self.zf_distractors = []
 
-        # self.zf_bbox_global=self.img_similar.get_feature(
-        # utils.crop_bbox(img,bbox))
+        self.bbox = np.array([0,0,0,0])
 
     def get_z_crop(self, img, bbox):
         self.center_pos = np.array([bbox[0] + (bbox[2] - 1) / 2,
@@ -186,7 +186,7 @@ class rb_tracker_v2(SiamRPNTracker):
                 filtered_bbox.append([cx - width / 2, cy - height / 2, width, height])
         return filtered_bbox
 
-    def score_nms(self, outputs, score_size, anchors):
+    def score_bbox_nms(self, outputs, score_size, anchors):
         score = self._convert_score(outputs['cls'])
         pred_bbox = self._convert_bbox(outputs['loc'], anchors)
         best_score = score[np.argmax(score)]
@@ -215,7 +215,6 @@ class rb_tracker_v2(SiamRPNTracker):
         return penalty
 
     def penalize_score(self, score, penalty, score_size):
-
         pscore = penalty * score
 
         hanning = np.hanning(score_size)
@@ -227,6 +226,34 @@ class rb_tracker_v2(SiamRPNTracker):
         pscore = pscore * (1 - cfg.TRACK.WINDOW_INFLUENCE) + \
                  window * cfg.TRACK.WINDOW_INFLUENCE
 
+        return pscore
+
+    def xcorr_score_nms(self,feature,x_crop,score_size):
+        outputs = self.model.corr(x_crop, feature)
+        score = self._convert_score(outputs['cls'])
+        index = np.argmax(score.reshape(5, -1), axis=0)
+        return score.reshape(5, -1)[index, np.arange(score_size * score_size)]
+
+    def penalize_score_neg(self, score, score_size,instance_size,method='rect'):
+        if method == 'hanning':
+            hanning = np.hanning(score_size)
+            window = -np.outer(hanning, hanning) + 1
+            window = window.flatten()
+            # window
+            pscore = score * (1 - cfg.TRACK.WINDOW_INFLUENCE) + \
+                     window * cfg.TRACK.WINDOW_INFLUENCE
+        elif method == 'rect':
+            width = self.bbox[2] / instance_size * score_size * self.neg_flt_rate
+            height = self.bbox[3] / instance_size * score_size * self.neg_flt_rate
+
+            xmin = int(score_size / 2 - width / 2)
+            xmax = int(score_size / 2 + width / 2)
+            ymin = int(score_size / 2 - height / 2)
+            ymax = int(score_size / 2 + height / 2)
+
+            pscore = score.reshape(score_size,score_size)
+            pscore[ymin:ymax+1,xmin:xmax+1] = 0
+            pscore =pscore.reshape(-1)
         return pscore
 
     def track_prepocess(self, img):
@@ -244,7 +271,7 @@ class rb_tracker_v2(SiamRPNTracker):
                                     round(s_x), self.channel_average)
 
         outputs = self.model.corr(x_crop, self.zf_gt)
-        score_nms_gt, pred_bbox_nms_gt, best_score = self.score_nms(outputs, score_size, anchors)
+        score_nms_gt, pred_bbox_nms_gt, best_score = self.score_bbox_nms(outputs, score_size, anchors)
         score_map_gt = score_nms_gt.reshape(score_size, score_size)
         penalty, pbbox = self.find_pbbox(score_nms_gt, pred_bbox_nms_gt, score_size, scale_z)
 
@@ -271,7 +298,7 @@ class rb_tracker_v2(SiamRPNTracker):
         # ---------------------------------------------
         if len(filtered_ppbbox):
             for idx, bb in enumerate(filtered_ppbbox):
-                z_im = self.crop_zf(img, bb, margin='wide')
+                z_im = self.crop_zf(img, bb, margin='narrow')
                 self.zf_distractors.append(self.model.template_rb(z_im))
                 if len(self.zf_distractors) > 3:
                     self.remove_similar_features(self.zf_distractors)
@@ -281,35 +308,40 @@ class rb_tracker_v2(SiamRPNTracker):
                     cv2.waitKey(1)
 
         score_nms_neg = []
-        for ft in self.zf_distractors:
-            outputs = self.model.corr(x_crop, ft)
-            score = self._convert_score(outputs['cls'])
-            index = np.argmax(score.reshape(5, -1), axis=0)
-            score_nms_neg.append(score.reshape(5, -1)[index, np.arange(score_size * score_size)])
-
-        outputs = self.model.corr(x_crop, self.zf_trust)
-        score = self._convert_score(outputs['cls'])
-        index = np.argmax(score.reshape(5, -1), axis=0)
-        score_nms_pos = score.reshape(5, -1)[index, np.arange(score_size * score_size)]
-
-        # score_nms_flt = (len(self.zf_distractors) -1 )* score_nms_gt + score_nms_pos \
-        #              - np.sum(np.array(score_nms_neg), axis=0)
-
-        score_nms_flt = score_nms_gt + score_nms_pos \
-                     - np.sum(np.array(score_nms_neg), axis=0) + max(0,(len(self.zf_distractors) -2))*score_nms_gt
-
-        if self.visualize:
-            frame = utils.visualize_tracking_heated('heat_pos', utils.img_tensor2cpu(x_crop), score_nms_pos.reshape(score_size, score_size),
-                                                    instance_size,
-                                                    self.frame_num, 0, win_shift=[350, 35])
-            cv2.imshow('heat_pos', frame)
-            cv2.waitKey(1)
-            for idx, scmp in enumerate(score_nms_neg):
-                frame = utils.visualize_tracking_heated('neg '+str(idx), utils.img_tensor2cpu(x_crop), scmp.reshape(score_size, score_size),
-                                                        instance_size,
-                                                        self.frame_num, 0, win_shift=[350*idx, 400])
+        for idx,ft in enumerate(self.zf_distractors):
+            score_neg=self.xcorr_score_nms(ft,x_crop,score_size)
+            score_neg = self.penalize_score_neg(score_neg,score_size,instance_size, method = 'rect')
+            score_nms_neg.append(score_neg)
+            if self.visualize:
+                frame = utils.visualize_tracking_heated('neg '+str(idx), utils.img_tensor2cpu(x_crop), score_neg.reshape(score_size, score_size),
+                                                        instance_size,self.frame_num, 0, win_shift=[350*idx, 400])
                 cv2.imshow('neg '+str(idx), frame)
                 cv2.waitKey(1)
+
+        score_nms_pos=[]
+        for idx,ft in enumerate(self.zf_trusts):
+            score_pos = self.xcorr_score_nms(ft, x_crop, score_size)
+            score_nms_pos.append(score_pos)
+            if self.visualize:
+                frame = utils.visualize_tracking_heated('heat_pos', utils.img_tensor2cpu(x_crop), score_pos.reshape(score_size, score_size),
+                                                        instance_size,
+                                                        self.frame_num, 0, win_shift=[350, 35])
+                width = self.bbox[2] / instance_size * score_size * self.neg_flt_rate
+                height = self.bbox[3] / instance_size * score_size * self.neg_flt_rate
+
+                xmin = int((score_size / 2 - width / 2) * instance_size / score_size)
+                xmax = int((score_size / 2 + width / 2) * instance_size / score_size)
+                ymin = int((score_size / 2 - height / 2) * instance_size / score_size)
+                ymax = int((score_size / 2 + height / 2) * instance_size / score_size)
+                cv2.rectangle(frame, (xmin, ymin),
+                              (xmax, ymax),
+                              (0, 0, 255), 5)
+                cv2.imshow('heat_pos', frame)
+                cv2.waitKey(1)
+
+        score_nms_flt = score_nms_gt + np.sum(np.array(score_nms_pos), axis=0) \
+                     - np.sum(np.array(score_nms_neg), axis=0) + \
+                        max(0,(len(score_nms_neg) - len(score_nms_pos) -1))*score_nms_gt
 
         score_nms_flt[np.where(score_nms_flt < 0)] = 0
         pscore2 = self.penalize_score(score_nms_flt, penalty, score_size)
@@ -333,7 +365,8 @@ class rb_tracker_v2(SiamRPNTracker):
 
         return {'pbbox':pbbox, 'proposal_bbox':filtered_ppbbox,
                 's_x':s_x, 'score_map':score_map_gt, 'x_crop':x_crop,
-                'state_reliable':state_reliable,'state_occlusion':state_occlusion}
+                'state_reliable':state_reliable,'state_occlusion':state_occlusion,
+                'score_nms_gt':score_nms_gt,'score_size':score_size}
 
     @torch.no_grad()
     def remove_similar_features(self, features):
@@ -358,9 +391,17 @@ class rb_tracker_v2(SiamRPNTracker):
             self.state_reliable_cnt = 0
         else:
             self.state_reliable_cnt += 1
-            if self.state_reliable_cnt >= 20:
+            if self.state_reliable_cnt >= 30:
                 z_im = self.crop_zf(img,self.bbox,margin='wide')
-                self.zf_trust = self.model.template_rb(z_im)
+                zf_trust = self.model.template_rb(z_im)
+                if len(self.zf_trusts) <= 2:
+                    self.zf_trusts.append(zf_trust)
+                else:
+                    score_trust=self.xcorr_score_nms(zf_trust,state['x_crop'],state['score_size'])
+                    cos_dist=utils.similarity_cosine(score_trust.reshape(1,-1),state['score_nms_gt'].reshape(1,-1))
+                    if cos_dist>=0.9:
+                        self.zf_trusts.pop(0)
+                        self.zf_trusts.append(zf_trust)
                 self.state_reliable_cnt = 0
 
                 cv2.imshow('reliable_temp', utils.img_tensor2cpu(z_im))

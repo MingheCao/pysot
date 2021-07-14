@@ -41,17 +41,13 @@ def main(args):
     cv2.namedWindow(video_name, cv2.WND_PROP_FULLSCREEN)
     cv2.moveWindow(video_name, 200, 220)
 
-    with open('/'.join(args.video_name.split('/')[:-1]) + '/UGV _short.json') as f:
+    with open('/'.join(args.video_name.split('/')[:-1]) + '/OTB100.json') as f:
         json_info = json.load(f)
     first_frame = True
 
-    respath=os.path.join(args.save_path,args.video_name.split('/')[-1]+ '.txt')
-    try:
-        rects = np.loadtxt(respath,delimiter=',')
-        rects[0,:] = json_info[video_name]['init_rect']
-    except:
-        rects = np.zeros((len(json_info[video_name]['img_names']),4))
-        rects[0, :] = json_info[video_name]['init_rect']
+    # respath=os.path.join(args.save_path,args.video_name.split('/')[-1]+ '.txt')
+    # rects = np.loadtxt(respath,delimiter=',')
+    # rects[0,:] = json_info[video_name]['init_rect']
 
     start_frame=1
     pluse_frame=13000
@@ -64,6 +60,9 @@ def main(args):
 
         if first_frame:
             try:
+                # gt_rects = np.loadtxt(args.video_name.replace('img', 'groundtruth_rect.txt'), delimiter=',',
+                #                       dtype='int')
+                # init_rect = gt_rects[int(frame_num), :]
                 init_rect = json_info[video_name]['gt_rect'][start_frame - 1]
             except:
                 exit()
@@ -73,7 +72,7 @@ def main(args):
         else:
             outputs = tracker.track(frame)
             tracker.frame_num= int(frame_num)
-            rects[int(frame_num) - 1, :] = np.array(outputs['bbox'])
+            # rects[int(frame_num) - 1, :] = np.array(outputs['bbox'])
 
             # rb_utils.visualize_response3d(outputs, fig, '1,2,1', frame_num)
 
@@ -97,17 +96,16 @@ def main(args):
             else:
                 break
 
-    np.savetxt(respath, rects,delimiter=',')
-    print('saved to %s' %(respath))
+    # np.savetxt(respath, rects,delimiter=',')
 
 if __name__ == '__main__':
     torch.set_num_threads(1)
     parser = argparse.ArgumentParser(description='tracking demo')
     parser.add_argument('--config', type=str, help='config file')
     parser.add_argument('--snapshot', type=str, help='model name')
-    parser.add_argument('--video_name', default='/home/rislab/Workspace/pysot/testing_dataset/UGV/210121_5', type=str,
+    parser.add_argument('--video_name', default='/home/rislab/Workspace/pysot/testing_dataset/OTB100/Girl2', type=str,
                         help='videos or image files')
-    parser.add_argument('--save_path', default='/home/rislab/Workspace/pysot/robust_track_v2/result/UGV', type=str,
+    parser.add_argument('--save_path', default='', type=str,
                         help='')
     args = parser.parse_args()
 

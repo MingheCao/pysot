@@ -103,7 +103,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='tracking demo')
     parser.add_argument('--config', type=str, help='config file')
     parser.add_argument('--snapshot', type=str, help='model name')
-    parser.add_argument('--video_name', default='/home/rislab/Workspace/pysot/testing_dataset/UAV123/person20', type=str,
+    parser.add_argument('--video_name', default='/home/rislab/Workspace/pysot/testing_dataset/UAV123/person28', type=str,
                         help='videos or image files')
     parser.add_argument('--save_path', default='', type=str,
                         help='')

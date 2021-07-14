@@ -442,6 +442,10 @@ def visualze_template(template,num):
     cv2.imwrite('/home/rislab/Workspace/pysot/rb_result/templates/'+ str(num) +'.jpg', heatmap)
 
 
+from sklearn.metrics.pairwise import cosine_similarity
+
+def similarity_cosine(x,y):
+    return cosine_similarity(x,y)
 
 
 if __name__ == '__main__':
