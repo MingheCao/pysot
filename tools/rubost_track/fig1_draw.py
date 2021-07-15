@@ -9,7 +9,7 @@ import os
 # set_name='Board'  # 110,
 # set_name='MotorRolling' 150
 set_name='Walking2'
-frame_num = 290
+frame_num = 1
 
 
 frame_num_end=1000

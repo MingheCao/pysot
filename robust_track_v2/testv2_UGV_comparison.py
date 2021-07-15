@@ -18,6 +18,8 @@ from robust_track_v2.rb_tracker_v2 import rb_tracker_v2
 from robust_track_v2.siam_model import SiamModel
 
 import json
+from pysot.models.model_builder import ModelBuilder
+from pysot.tracker.tracker_builder import build_tracker
 
 def main(args):
     # load config
@@ -26,7 +28,7 @@ def main(args):
     device = torch.device('cuda' if cfg.CUDA else 'cpu')
 
     # create model
-    model = SiamModel()
+    model = ModelBuilder()
 
     # load model
     model.load_state_dict(torch.load(args.snapshot,
@@ -34,7 +36,7 @@ def main(args):
     model.eval().to(device)
 
     # build tracker
-    tracker=rb_tracker_v2(model)
+    tracker=build_tracker(model)
 
     video_name = args.video_name.split('/')[-1].split('.')[0]
     base_path = '/'.join(args.video_name.split('/')[:-1])
@@ -53,7 +55,7 @@ def main(args):
         rects = np.zeros((len(json_info[video_name]['img_names']),4))
         rects[0, :] = json_info[video_name]['init_rect']
 
-    start_frame=300
+    start_frame=1
     pluse_frame=13000
 
     for img in sorted(json_info[video_name]['img_names']):

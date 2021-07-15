@@ -78,12 +78,12 @@ def main():
                 '210121_4': 'UGV16',
                 '210121_5': 'UGV17'}
     attr='210120_4'
-    save_path = '/home/rislab/Workspace/pysot/rb_result/opefigs_chn/'
-    # draw_success_precision_paper(success_ret, 'UGV', attr, UGV_dict[attr], precision_ret=precision_ret, bold_name=['Ours(Siamrpn)','Ours(Siamrpn++)'],save = True,save_path=save_path)
-    # for nn in UGV_dict.keys():
-    #     draw_success_precision_paper(success_ret,'UGV',nn,UGV_dict[nn],precision_ret=precision_ret,bold_name=['Ours(Siamrpn)','Ours(Siamrpn++)'],save = True,save_path=save_path)
+    save_path = '/home/rislab/Workspace/pysot/rb_result/opefigs_v2/'
+    draw_success_precision_paper(success_ret, 'UGV', list(success_ret['Ours(SiamRPN)'].keys()), 'all', precision_ret=precision_ret, bold_name=['Ours(SiamRPN)','Ours(SiamRPN++)'],save = True,save_path=save_path)
+    for nn in UGV_dict.keys():
+        draw_success_precision_paper(success_ret,'UGV',nn,UGV_dict[nn],precision_ret=precision_ret,bold_name=['Ours(SiamRPN)','Ours(SiamRPN++)'],save = True,save_path=save_path)
     # draw_success_precision_paper(success_ret,'UGV',list(success_ret['本文方法(SiamRPN)'].keys()),'all',precision_ret=precision_ret,bold_name=['Ours(Siamrpn)','Ours(Siamrpn++)'],save = True,save_path=save_path)
-    draw_success_precision_thesis(success_ret,'UGV',list(success_ret['本文方法(SiamRPN)'].keys()),'all',precision_ret=precision_ret,bold_name=['Ours(Siamrpn)','Ours(Siamrpn++)'],save = True,save_path=save_path)
+    # draw_success_precision_thesis(success_ret,'UGV',list(success_ret['本文方法(SiamRPN)'].keys()),'all',precision_ret=precision_ret,bold_name=['Ours(Siamrpn)','Ours(Siamrpn++)'],save = True,save_path=save_path)
 
 if __name__ == '__main__':
     main()

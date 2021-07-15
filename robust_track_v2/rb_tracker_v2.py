@@ -27,7 +27,9 @@ class rb_tracker_v2(SiamRPNTracker):
         self.visualize = True
         self.visualize_gmm = False
         self.save_img = False
-        self.CONFIDENCE_LOW = 0.985
+        # self.CONFIDENCE_LOW = 0.985
+        self.CONFIDENCE_LOW = 0.8
+
         self.instance_sizes = {x: cfg.TRACK.INSTANCE_SIZE + 60 * x for x in range(10)}
 
         self.state_reliable_cnt = 0
@@ -35,7 +37,7 @@ class rb_tracker_v2(SiamRPNTracker):
         self.center_std_thre = 2.3
         self.similar_thre = 1.2
 
-        self.neg_flt_rate = 0.1
+        self.neg_flt_rate = 0.08
 
     def init(self, img, bbox):
         """
@@ -298,7 +300,7 @@ class rb_tracker_v2(SiamRPNTracker):
         # ---------------------------------------------
         if len(filtered_ppbbox):
             for idx, bb in enumerate(filtered_ppbbox):
-                z_im = self.crop_zf(img, bb, margin='narrow')
+                z_im = self.crop_zf(img, bb, margin='wide')
                 self.zf_distractors.append(self.model.template_rb(z_im))
                 if len(self.zf_distractors) > 3:
                     self.remove_similar_features(self.zf_distractors)
@@ -310,11 +312,23 @@ class rb_tracker_v2(SiamRPNTracker):
         score_nms_neg = []
         for idx,ft in enumerate(self.zf_distractors):
             score_neg=self.xcorr_score_nms(ft,x_crop,score_size)
-            score_neg = self.penalize_score_neg(score_neg,score_size,instance_size, method = 'rect')
+            if not state_occlusion:
+                score_neg = self.penalize_score_neg(score_neg,score_size,instance_size, method = 'rect')
             score_nms_neg.append(score_neg)
             if self.visualize:
                 frame = utils.visualize_tracking_heated('neg '+str(idx), utils.img_tensor2cpu(x_crop), score_neg.reshape(score_size, score_size),
                                                         instance_size,self.frame_num, 0, win_shift=[350*idx, 400])
+                if not state_occlusion:
+                    width = self.bbox[2] / instance_size * score_size * self.neg_flt_rate
+                    height = self.bbox[3] / instance_size * score_size * self.neg_flt_rate
+
+                    xmin = int((score_size / 2 - width / 2) * instance_size / score_size)
+                    xmax = int((score_size / 2 + width / 2) * instance_size / score_size)
+                    ymin = int((score_size / 2 - height / 2) * instance_size / score_size)
+                    ymax = int((score_size / 2 + height / 2) * instance_size / score_size)
+                    cv2.rectangle(frame, (xmin, ymin),
+                                  (xmax, ymax),
+                                  (0, 0, 255), 2)
                 cv2.imshow('neg '+str(idx), frame)
                 cv2.waitKey(1)
 
@@ -326,22 +340,12 @@ class rb_tracker_v2(SiamRPNTracker):
                 frame = utils.visualize_tracking_heated('heat_pos', utils.img_tensor2cpu(x_crop), score_pos.reshape(score_size, score_size),
                                                         instance_size,
                                                         self.frame_num, 0, win_shift=[350, 35])
-                width = self.bbox[2] / instance_size * score_size * self.neg_flt_rate
-                height = self.bbox[3] / instance_size * score_size * self.neg_flt_rate
-
-                xmin = int((score_size / 2 - width / 2) * instance_size / score_size)
-                xmax = int((score_size / 2 + width / 2) * instance_size / score_size)
-                ymin = int((score_size / 2 - height / 2) * instance_size / score_size)
-                ymax = int((score_size / 2 + height / 2) * instance_size / score_size)
-                cv2.rectangle(frame, (xmin, ymin),
-                              (xmax, ymax),
-                              (0, 0, 255), 5)
                 cv2.imshow('heat_pos', frame)
                 cv2.waitKey(1)
 
         score_nms_flt = score_nms_gt + np.sum(np.array(score_nms_pos), axis=0) \
                      - np.sum(np.array(score_nms_neg), axis=0) + \
-                        max(0,(len(score_nms_neg) - len(score_nms_pos) -1))*score_nms_gt
+                        max(0,(len(score_nms_neg) - len(score_nms_pos) -1))*score_nms_gt + score_nms_gt
 
         score_nms_flt[np.where(score_nms_flt < 0)] = 0
         pscore2 = self.penalize_score(score_nms_flt, penalty, score_size)
@@ -373,7 +377,13 @@ class rb_tracker_v2(SiamRPNTracker):
         recent_ft = features[-1]
         dist = []
         for ft in features[0:-1]:
-            dist.append(torch.sum(torch.square(recent_ft - ft)))
+            if not isinstance(recent_ft, list):
+                dist.append(torch.sum(torch.square(recent_ft - ft)))
+            else:
+                dis = 0
+                for idx in range(len(recent_ft)):
+                    dis += torch.sum(torch.square(recent_ft[idx] - ft[idx]))
+                dist.append(dis)
         del features[np.argmin(dist)]
         return features
 
@@ -391,7 +401,7 @@ class rb_tracker_v2(SiamRPNTracker):
             self.state_reliable_cnt = 0
         else:
             self.state_reliable_cnt += 1
-            if self.state_reliable_cnt >= 30:
+            if self.state_reliable_cnt >= 20:
                 z_im = self.crop_zf(img,self.bbox,margin='wide')
                 zf_trust = self.model.template_rb(z_im)
                 if len(self.zf_trusts) <= 2:
