@@ -53,7 +53,7 @@ def main(args):
         rects = np.zeros((len(json_info[video_name]['img_names']),4))
         rects[0, :] = json_info[video_name]['init_rect']
 
-    start_frame=300
+    start_frame=1
     pluse_frame=13000
 
     for img in sorted(json_info[video_name]['img_names']):

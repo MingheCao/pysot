@@ -29,6 +29,8 @@ parser.add_argument('--show_video_level', '-s', dest='show_video_level',
 parser.set_defaults(show_video_level=False)
 args = parser.parse_args()
 
+args.tracker_path='/home/rislab/Workspace/pysot/robust_track_v2/result'
+args.dataset='Following'
 
 def main():
     tracker_dir = os.path.join(args.tracker_path, args.dataset)
@@ -79,11 +81,23 @@ def main():
                 '210121_5': 'UGV17'}
     attr='210120_4'
     save_path = '/home/rislab/Workspace/pysot/rb_result/opefigs_v2/'
-    draw_success_precision_paper(success_ret, 'UGV', list(success_ret['Ours(SiamRPN)'].keys()), 'all', precision_ret=precision_ret, bold_name=['Ours(SiamRPN)','Ours(SiamRPN++)'],save = True,save_path=save_path)
-    for nn in UGV_dict.keys():
-        draw_success_precision_paper(success_ret,'UGV',nn,UGV_dict[nn],precision_ret=precision_ret,bold_name=['Ours(SiamRPN)','Ours(SiamRPN++)'],save = True,save_path=save_path)
+    draw_success_precision_paper(success_ret, args.dataset, list(success_ret['Ours(SiamRPN)'].keys()), 'all', precision_ret=precision_ret, bold_name=['Ours(SiamRPN)','Ours(SiamRPN++)'],save = True,save_path=save_path)
+    # for nn in UGV_dict.keys():
+    #     draw_success_precision_paper(success_ret,args.dataset,nn,UGV_dict[nn],precision_ret=precision_ret,bold_name=['Ours(SiamRPN)','Ours(SiamRPN++)'],save = True,save_path=save_path)
     # draw_success_precision_paper(success_ret,'UGV',list(success_ret['本文方法(SiamRPN)'].keys()),'all',precision_ret=precision_ret,bold_name=['Ours(Siamrpn)','Ours(Siamrpn++)'],save = True,save_path=save_path)
     # draw_success_precision_thesis(success_ret,'UGV',list(success_ret['本文方法(SiamRPN)'].keys()),'all',precision_ret=precision_ret,bold_name=['Ours(Siamrpn)','Ours(Siamrpn++)'],save = True,save_path=save_path)
 
+    import json
+    path='/home/rislab/Workspace/pysot/testing_dataset/Following/Following.json'
+    with open(path) as f:
+        following_json = json.load(f)
+    for nn in following_json.keys():
+        attr = nn.replace('_','-')
+        print(attr)
+        draw_success_precision_paper(success_ret,args.dataset,nn,attr,precision_ret=precision_ret,bold_name=['Ours(SiamRPN)','Ours(SiamRPN++)'],save = True,save_path=save_path)
+
+    for tracker in success_ret.keys():
+        for item in success_ret[tracker].keys():
+            print('%s , %s : %.2f' %(tracker,item,success_ret[tracker][item][0]*100))
 if __name__ == '__main__':
     main()

@@ -161,6 +161,8 @@ def draw_success_precision_paper(success_ret, name, videos, attr, precision_ret=
     if save:
         plt.savefig(save_path + attr + '-success.jpg',bbox_inches='tight',pad_inches = 0,dpi=300)
     # plt.show()
+    plt.clf()
+    plt.close(fig)
 
 
     # if precision_ret:

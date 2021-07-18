@@ -28,16 +28,18 @@ class rb_tracker_v2(SiamRPNTracker):
         self.visualize_gmm = False
         self.save_img = False
         # self.CONFIDENCE_LOW = 0.985
-        self.CONFIDENCE_LOW = 0.8
+        # self.CONFIDENCE_LOW = 0.5
+        self.CONFIDENCE_LOW = 0.1
+
 
         self.instance_sizes = {x: cfg.TRACK.INSTANCE_SIZE + 60 * x for x in range(10)}
 
         self.state_reliable_cnt = 0
 
-        self.center_std_thre = 2.3
-        self.similar_thre = 1.2
+        self.center_std_thre = 2.2
+        self.reliable_cnt_thre = 5
 
-        self.neg_flt_rate = 0.08
+        self.neg_flt_rate = 0.1
 
     def init(self, img, bbox):
         """
@@ -49,10 +51,8 @@ class rb_tracker_v2(SiamRPNTracker):
 
         self.model.template(z_crop)
         self.zf_gt = self.model.zf
-        self.zf_global = self.model.zf
 
         self.zf_trusts = []
-        self.zf_trusts.append(self.model.zf)
 
         self.zf_distractors = []
 
@@ -288,7 +288,8 @@ class rb_tracker_v2(SiamRPNTracker):
             if not len(filtered_ppbbox):
                 state_reliable = True
 
-        if best_score <= self.CONFIDENCE_LOW or state_sampling is False:
+        # if best_score <= self.CONFIDENCE_LOW or state_sampling is False:
+        if best_score <= self.CONFIDENCE_LOW:
             state_reliable = False
             state_occlusion = True
 
@@ -310,27 +311,28 @@ class rb_tracker_v2(SiamRPNTracker):
                     cv2.waitKey(1)
 
         score_nms_neg = []
-        for idx,ft in enumerate(self.zf_distractors):
-            score_neg=self.xcorr_score_nms(ft,x_crop,score_size)
-            if not state_occlusion:
-                score_neg = self.penalize_score_neg(score_neg,score_size,instance_size, method = 'rect')
-            score_nms_neg.append(score_neg)
-            if self.visualize:
-                frame = utils.visualize_tracking_heated('neg '+str(idx), utils.img_tensor2cpu(x_crop), score_neg.reshape(score_size, score_size),
-                                                        instance_size,self.frame_num, 0, win_shift=[350*idx, 400])
-                if not state_occlusion:
-                    width = self.bbox[2] / instance_size * score_size * self.neg_flt_rate
-                    height = self.bbox[3] / instance_size * score_size * self.neg_flt_rate
+        if not state_occlusion:
+            for idx,ft in enumerate(self.zf_distractors):
+                score_neg=self.xcorr_score_nms(ft,x_crop,score_size)
+                # if not state_occlusion:
+                #     score_neg = self.penalize_score_neg(score_neg,score_size,instance_size, method = 'rect')
+                score_nms_neg.append(score_neg)
+                if self.visualize:
+                    frame = utils.visualize_tracking_heated('neg '+str(idx), utils.img_tensor2cpu(x_crop), score_neg.reshape(score_size, score_size),
+                                                            instance_size,self.frame_num, 0, win_shift=[350*idx, 400])
+                    if not state_occlusion:
+                        width = self.bbox[2] / instance_size * score_size * self.neg_flt_rate
+                        height = self.bbox[3] / instance_size * score_size * self.neg_flt_rate
 
-                    xmin = int((score_size / 2 - width / 2) * instance_size / score_size)
-                    xmax = int((score_size / 2 + width / 2) * instance_size / score_size)
-                    ymin = int((score_size / 2 - height / 2) * instance_size / score_size)
-                    ymax = int((score_size / 2 + height / 2) * instance_size / score_size)
-                    cv2.rectangle(frame, (xmin, ymin),
-                                  (xmax, ymax),
-                                  (0, 0, 255), 2)
-                cv2.imshow('neg '+str(idx), frame)
-                cv2.waitKey(1)
+                        xmin = int((score_size / 2 - width / 2) * instance_size / score_size)
+                        xmax = int((score_size / 2 + width / 2) * instance_size / score_size)
+                        ymin = int((score_size / 2 - height / 2) * instance_size / score_size)
+                        ymax = int((score_size / 2 + height / 2) * instance_size / score_size)
+                        cv2.rectangle(frame, (xmin, ymin),
+                                      (xmax, ymax),
+                                      (0, 0, 255), 2)
+                    cv2.imshow('neg '+str(idx), frame)
+                    cv2.waitKey(1)
 
         score_nms_pos=[]
         for idx,ft in enumerate(self.zf_trusts):
@@ -343,12 +345,19 @@ class rb_tracker_v2(SiamRPNTracker):
                 cv2.imshow('heat_pos', frame)
                 cv2.waitKey(1)
 
-        score_nms_flt = score_nms_gt + np.sum(np.array(score_nms_pos), axis=0) \
-                     - np.sum(np.array(score_nms_neg), axis=0) + \
-                        max(0,(len(score_nms_neg) - len(score_nms_pos) -1))*score_nms_gt + score_nms_gt
+        if not state_occlusion:
+            score_nms_flt = score_nms_gt + np.sum(np.array(score_nms_pos), axis=0) \
+                         - np.sum(np.array(score_nms_neg), axis=0) + \
+                            max(0,(len(score_nms_neg) - len(score_nms_pos) -1))*score_nms_gt + score_nms_gt
+            # score_nms_flt = score_nms_gt + np.sum(np.array(score_nms_pos), axis=0) \
+            #              - np.sum(np.array(score_nms_neg), axis=0)
+            score_nms_flt[np.where(score_nms_flt < 0)] = 0
+            pscore2 = self.penalize_score(score_nms_flt, penalty, score_size)
+        else:
+            score_nms_flt = score_nms_gt + np.sum(np.array(score_nms_pos), axis=0)
+            score_nms_flt[np.where(score_nms_flt < 0)] = 0
+            pscore2 = score_nms_flt
 
-        score_nms_flt[np.where(score_nms_flt < 0)] = 0
-        pscore2 = self.penalize_score(score_nms_flt, penalty, score_size)
         best_idx2 = np.argmax(pscore2)
         best_score2 = score_nms_flt[best_idx2]
         bbox = pred_bbox_nms_gt[:, best_idx2] / scale_z
@@ -401,10 +410,10 @@ class rb_tracker_v2(SiamRPNTracker):
             self.state_reliable_cnt = 0
         else:
             self.state_reliable_cnt += 1
-            if self.state_reliable_cnt >= 20:
+            if self.state_reliable_cnt >= self.reliable_cnt_thre:
                 z_im = self.crop_zf(img,self.bbox,margin='wide')
                 zf_trust = self.model.template_rb(z_im)
-                if len(self.zf_trusts) <= 2:
+                if len(self.zf_trusts) <= 1:
                     self.zf_trusts.append(zf_trust)
                 else:
                     score_trust=self.xcorr_score_nms(zf_trust,state['x_crop'],state['score_size'])
@@ -417,20 +426,29 @@ class rb_tracker_v2(SiamRPNTracker):
                 cv2.imshow('reliable_temp', utils.img_tensor2cpu(z_im))
                 cv2.waitKey(1)
 
-        # if not state['state_occlusion']:
-        if True:
+        if not state['state_occlusion']:
+        # if True:
             pbbox = state['pbbox']
             self.center_pos = np.array([pbbox[0], pbbox[1]])
             self.size = np.array([pbbox[2], pbbox[3]])
 
             cx, cy, width, height = self._bbox_clip(pbbox[0], pbbox[1], pbbox[2],
-                                                    pbbox[3], img.shape[:2])
+                                                pbbox[3], img.shape[:2])
+
             self.bbox = [cx - width / 2,
-                         cy - height / 2,
-                         width,
-                         height]
+                             cy - height / 2,
+                             width,
+                             height]
+
+            self.state_scaled = False
         else:
-            pass
+            if not self.state_scaled:
+                scal = 1.3
+                self.size *= scal
+
+                self.state_scaled = True
+            else:
+                pass
 
         state['bbox'] = self.bbox
 

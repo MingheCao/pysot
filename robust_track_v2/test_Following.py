@@ -41,19 +41,24 @@ def main(args):
     cv2.namedWindow(video_name, cv2.WND_PROP_FULLSCREEN)
     cv2.moveWindow(video_name, 200, 220)
 
-    with open('/'.join(args.video_name.split('/')[:-1]) + '/UAV123.json') as f:
+    with open('/'.join(args.video_name.split('/')[:-1]) + '/Following.json') as f:
         json_info = json.load(f)
     first_frame = True
 
-    # respath=os.path.join(args.save_path,args.video_name.split('/')[-1]+ '.txt')
-    # rects = np.loadtxt(respath,delimiter=',')
-    # rects[0,:] = json_info[video_name]['init_rect']
+    respath=os.path.join(args.save_path,args.video_name.split('/')[-1]+ '.txt')
+    try:
+        rects = np.loadtxt(respath,delimiter=',')
+        rects[0,:] = json_info[video_name]['init_rect']
+    except:
+        rects = np.zeros((len(json_info[video_name]['img_names']),4))
+        rects[0, :] = json_info[video_name]['init_rect']
 
     start_frame=1
-    pluse_frame=13000
+    pluse_frame=130000
 
-    for img in sorted(json_info[video_name]['img_names']):
+    for idx, img in enumerate(sorted(json_info[video_name]['img_names'])):
         frame_num=img.split('/')[-1].split('.')[0]
+        frame_num = idx + 1
         frame = cv2.imread(os.path.join(base_path,img))
         if int(frame_num) < start_frame:
             continue
@@ -72,7 +77,7 @@ def main(args):
         else:
             outputs = tracker.track(frame)
             tracker.frame_num= int(frame_num)
-            # rects[int(frame_num) - 1, :] = np.array(outputs['bbox'])
+            rects[int(frame_num) - 1, :] = np.array(outputs['bbox'])
 
             # rb_utils.visualize_response3d(outputs, fig, '1,2,1', frame_num)
 
@@ -96,7 +101,7 @@ def main(args):
             else:
                 break
 
-    # np.savetxt(respath, rects,delimiter=',')
+        np.savetxt(respath, rects,delimiter=',')
 
 if __name__ == '__main__':
     torch.set_num_threads(1)
@@ -109,4 +114,36 @@ if __name__ == '__main__':
                         help='')
     args = parser.parse_args()
 
-    main(args)
+    args.save_path = '/home/rislab/Workspace/pysot/robust_track_v2/result/Following'
+    # weightpath='/home/rislab/Workspace/pysot/experiments/siamrpn_alex_dwxcorr'
+    weightpath='/home/rislab/Workspace/pysot/experiments/siamrpn_r50_l234_dwxcorr'
+
+    args.config = weightpath+'/config.yaml'
+    args.snapshot = weightpath+'/model.pth'
+
+    path = '/home/rislab/Workspace/pysot/testing_dataset/Following'
+    with open(path + '/Following.json') as f:
+        json_info = json.load(f)
+
+    UAV123=['group1_4', \
+               'group2_1', 'group2_2', 'group2_3', 'group3_1', 'group3_2', \
+               'group3_3', 'group3_4', 'person4_1', 'person4_2', 'person9', \
+               'person19_1', 'person19_2', 'person11', 'person18', 'person20']
+
+    OTB100 = ['Human3']
+
+    UAV123 = ['group3_4']
+
+    # dataset = 'person9'
+    # args.video_name = os.path.join(path, dataset)
+    # main(args)
+
+    idx = 0
+    # for dataset in sorted(json_info.keys()):
+    for dataset in sorted(UAV123):
+        args.video_name = os.path.join(path, dataset)
+        idx += 1
+        print(idx)
+        print(dataset)
+        main(args)
+
